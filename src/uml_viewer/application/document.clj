@@ -93,6 +93,22 @@
   (let [root (overlay/metrics-root path)]
     (overlay/apply-metrics doc (overlay/load-metrics root))))
 
+(def session-keys
+  [:focus :proposal-id :proposal :open-layer :declutter
+   :cam-x :cam-y :zoom :selected :detail-id])
+
+(defn save-session!
+  "Write the current view (depth, pan, zoom, proposal) for --restart."
+  [state]
+  (when-let [path (:path state)]
+    (mailbox/write-session! (overlay/metrics-root path)
+                            (select-keys state session-keys)))
+  state)
+
+(defn- known-proposal-id [doc id]
+  (when (and id (some #(= id (:id %)) (hierarchy/named-proposals doc)))
+    id))
+
 (defn load-path [path]
   (let [file (java.io.File. path)]
     (cond
@@ -126,6 +142,40 @@
       (and id (nil? (hit/class-by-id (:scene state) id)))
       (dissoc :detail-id))))
 
+(defn restore-session
+  "Reapply a saved view onto a freshly loaded state."
+  [state snap]
+  (if (or (not (map? snap)) (nil? (:doc state)))
+    state
+    (let [focus (vec (or (:focus snap) []))
+          pid (known-proposal-id (:doc state) (:proposal-id snap))
+          open (:open-layer snap)
+          declutter (:declutter snap)
+          root (overlay/metrics-root (:path state))
+          scene (compile-view (:doc state) root focus
+                              {:proposal-id pid
+                               :declutter declutter
+                               :open-layer open})]
+      (-> state
+          (assoc :focus focus
+                 :proposal-id pid
+                 :proposal (boolean pid)
+                 :open-layer open
+                 :declutter declutter
+                 :scene scene
+                 :cam-x (or (:cam-x snap) 0)
+                 :cam-y (or (:cam-y snap) 0)
+                 :zoom (or (:zoom snap) 1.0)
+                 :selected (:selected snap)
+                 :detail-id (:detail-id snap))
+          drop-missing-detail))))
+
+(defn restart-state
+  "Load `path` and restore the last saved view, if any."
+  [path]
+  (restore-session (dissoc (load-path path) :waiting)
+                   (mailbox/read-session (overlay/metrics-root path))))
+
 (defn- resolve-display-path [state p]
   (let [f (io/file p)]
     (if (.isAbsolute f)
@@ -152,7 +202,7 @@
     (let [root (overlay/metrics-root (:path state))
           f (mailbox/to-viewer root)]
       (loop [state state]
-        (if-let [cmd (mailbox/unread f (:mail-seen state))]
+        (if-let [cmd (mailbox/take-command! f (:mail-seen state))]
           (recur (apply-mail state cmd))
           state)))))
 

@@ -49,8 +49,8 @@
        "   re-run the file or pass --mutate-all because of them.\n"
        "4. Regenerate the IR so the EDN mtime updates.\n"
        "Mailbox: .uml-viewer/to-agent.edn and to-viewer.edn are queues\n"
-       "{:next-id n :queue [cmd …]} (atomic: tmp then rename). Process every\n"
-       "queued command with id greater than last seen, oldest first. Ops are\n"
+       "{:next-id n :queue [cmd …]} (atomic: tmp then rename). Pop the head of\n"
+       ":queue as you handle it (rewrite the file). Oldest first. Ops are\n"
        "{:id n :op :display :path \"...\"}, {:id n :op :regen},\n"
        "{:id n :op :quit-for-restart}, {:id n :op :context ...},\n"
        "and right-click element ops:\n"
@@ -66,8 +66,8 @@
        "{:context :real} for the namespace tree, or {:context :proposal\n"
        " :proposal-id id :name \"...\"} for a named proposal. Treat that as\n"
        "the architecture under discussion until a later :context arrives.\n"
-       "A tmux wake-up means mail is waiting. If idle, drain to-agent.edn\n"
-       "in order. If busy, finish first. Do not send tmux yourself.\n"
+       "A tmux wake-up means mail is waiting. If idle, pop and handle each\n"
+       "to-agent command in order. If busy, finish first. Do not send tmux yourself.\n"
        "After regen, write :display with the generated EDN path.\n"
        "The examined project must have aliases :uml-viewer (fresh start: spawn\n"
        "this companion, wait for :display) and :uml-viewer-restart (new JVM,\n"
@@ -468,7 +468,7 @@
    (q/smooth)
    (q/text-font (q/create-font "SansSerif" 14 true))
    (if restart?
-     (document/load-path path)
+     (document/restart-state path)
      (document/waiting-state path))))
 
 (defn- view-dims []
@@ -505,7 +505,9 @@
 (defn update-state [state]
   (let [state (-> state document/maybe-reload document/poll-mail)]
     (if (:quit-for-restart state)
-      (do (quit-for-restart!) state)
+      (do (document/save-session! state)
+          (quit-for-restart!)
+          state)
       (apply-bridge-flags state))))
 
 (defn- open-card! [state id]

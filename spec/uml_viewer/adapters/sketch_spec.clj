@@ -369,20 +369,23 @@
   (it "loads the EDN immediately on restart"
     (quiet-quil
       (fn []
-        (with-redefs [document/load-path (fn [p] {:path p :loaded true})]
+        (with-redefs [document/restart-state (fn [p] {:path p :loaded true})]
           (should= {:path "doc.edn" :loaded true} (sketch/setup "doc.edn" true))))))
 
   (it "quits for restart when mail says so"
     (let [quit (atom 0)
-          continued (atom 0)]
+          continued (atom 0)
+          saved (atom nil)]
       (with-redefs [document/maybe-reload identity
                     document/poll-mail (fn [s] (assoc s :quit-for-restart true))
+                    document/save-session! (fn [s] (reset! saved s) s)
                     uml-viewer.adapters.sketch/quit-for-restart! (fn [] (swap! quit inc))
                     uml-viewer.adapters.sketch/apply-bridge-flags (fn [s] (swap! continued inc) s)
                     uml-viewer.adapters.sketch/halt-vm! (fn [])]
         (should= true (:quit-for-restart (sketch/update-state (state))))
         (should= 1 @quit)
-        (should= 0 @continued))))
+        (should= 0 @continued)
+        (should @saved))))
 
   (it "does not quit for restart on ordinary updates"
     (let [quit (atom 0)

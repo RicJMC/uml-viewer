@@ -8,6 +8,7 @@
 (def dir-name ".uml-viewer")
 (def to-viewer-name "to-viewer.edn")
 (def to-agent-name "to-agent.edn")
+(def session-name "session.edn")
 
 (defn dir [root]
   (io/file root dir-name))
@@ -17,6 +18,9 @@
 
 (defn to-agent [root]
   (io/file (dir root) to-agent-name))
+
+(defn session-file [root]
+  (io/file (dir root) session-name))
 
 (defn read-command
   [file]
@@ -79,6 +83,30 @@
                (:queue (read-mailbox file)))))
 
 (defn unread
-  "Next queued command after `seen-id`, or nil."
+  "Next queued command after `seen-id`, or nil. Does not remove it."
   [file seen-id]
   (first (pending file seen-id)))
+
+(defn take-command!
+  "Remove and return the oldest command newer than `seen-id`, or nil.
+  Stale items at or below `seen-id` are dropped from the file."
+  ([file] (take-command! file 0))
+  ([file seen-id]
+   (let [box (read-mailbox file)
+         seen (long (or seen-id 0))
+         q (vec (filter #(> (long (:id %)) seen) (:queue box)))]
+     (when (seq q)
+       (atomic-write! file {:next-id (long (or (:next-id box) 1))
+                            :queue (vec (rest q))})
+       (first q)))))
+
+(defn write-session!
+  "Persist viewer scene keys for --restart."
+  [root m]
+  (atomic-write! (session-file root) (or m {}))
+  m)
+
+(defn read-session
+  [root]
+  (let [raw (read-command (session-file root))]
+    (when (map? raw) raw)))

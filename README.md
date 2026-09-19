@@ -68,15 +68,16 @@ The examined project (and this one) must expose two aliases:
 | Alias | Who | What |
 |-------|-----|------|
 | `:uml-viewer` | anyone | Fresh window. Starts the companion. Waits for `:display`. |
-| `:uml-viewer-restart` | **associated agent only** | New JVM, same companion. Loads the EDN immediately. |
+| `:uml-viewer-restart` | **associated agent only** | New JVM, same companion. Restores the last view. |
 
 Do **not** pass `--restart` (or use `:uml-viewer-restart`) unless you are that
 companion recycling the window after source changes. A stray `--restart`
 skips spawning Grok and leaves a diagram with no agent. The companion
 recycles the window by writing `:quit-for-restart` to
 `.uml-viewer/to-viewer.edn`, waiting for the JVM to exit, then
-`clj -M:uml-viewer-restart`. Do not SIGKILL. Closing the window still kills
-Grok.
+`clj -M:uml-viewer-restart`. The new JVM restores depth, pan, zoom, and
+which proposal was showing (`.uml-viewer/session.edn`). Do not SIGKILL.
+Closing the window still kills Grok.
 
 On a fresh start the canvas stays blank until the companion sends `:display`,
 with **Waiting for agent to create diagram.** `R` reloads the current EDN
@@ -331,9 +332,13 @@ project (gitignored). The file is the mail; tmux is only a doorbell.
 | `.uml-viewer/to-agent.edn` | viewer → Grok |
 
 Each mailbox file is a small queue `{:next-id n :queue [cmd …]}` (tmp-then-rename).
-Commands have a rising `:id`. Append; do not overwrite. The reader drains every
-item with id greater than last seen, oldest first. About 32 recent commands
-are kept.
+Commands have a rising `:id`. Append; do not overwrite. Handling a command
+**pops** it from `:queue` and rewrites the file (oldest first). The viewer
+does this itself on `to-viewer.edn`. The companion must pop each
+`to-agent.edn` command as it handles it.
+
+`.uml-viewer/session.edn` is the last view (depth, pan, zoom, proposal) written
+on `:quit-for-restart` and restored by `--restart`.
 
 | `:op` | Meaning |
 |-------|---------|

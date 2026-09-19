@@ -9,6 +9,14 @@
     (.mkdirs)))
 
 (describe "mailbox"
+  (it "round-trips a restart session"
+    (let [root (tmp-root)]
+      (mailbox/write-session! root {:focus [:engine] :zoom 1.1 :cam-x 12})
+      (let [snap (mailbox/read-session root)]
+        (should= [:engine] (:focus snap))
+        (should= 1.1 (:zoom snap))
+        (should= 12 (:cam-x snap)))))
+
   (it "writes commands atomically with rising ids"
     (let [root (tmp-root)
           f (mailbox/to-agent root)
@@ -37,19 +45,29 @@
       (should= :display (:op (mailbox/unread f 0)))
       (should-be-nil (mailbox/unread f 1))))
 
+  (it "removes a command from the queue when it is taken"
+    (let [root (tmp-root)
+          f (mailbox/to-agent root)]
+      (mailbox/write-command! f :context {:context :real})
+      (mailbox/write-command! f :omit {:target {:id :a}})
+      (should= :context (:op (mailbox/take-command! f)))
+      (should= [:omit] (mapv :op (:queue (mailbox/read-mailbox f))))
+      (should= :omit (:op (mailbox/take-command! f)))
+      (should= [] (:queue (mailbox/read-mailbox f)))
+      (should-be-nil (mailbox/take-command! f))))
+
   (it "drains a viewer queue in order"
     (let [root (tmp-root)
           f (mailbox/to-viewer root)
-          seen (atom 0)
           ops (atom [])]
       (mailbox/write-command! f :nope {})
       (mailbox/write-command! f :quit-for-restart {})
       (loop []
-        (when-let [cmd (mailbox/unread f @seen)]
+        (when-let [cmd (mailbox/take-command! f)]
           (swap! ops conj (:op cmd))
-          (reset! seen (:id cmd))
           (recur)))
-      (should= [:nope :quit-for-restart] @ops)))
+      (should= [:nope :quit-for-restart] @ops)
+      (should= [] (:queue (mailbox/read-mailbox f)))))
 
   (it "switches the viewer path on :display"
     (let [s {:path "examples/library.edn" :mail-seen 0 :waiting true}

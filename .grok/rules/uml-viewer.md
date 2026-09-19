@@ -15,8 +15,8 @@ The diagram is already on screen.
   `src/` files (differential), then `clj -M:ir`. Uncovered mutants are
   coverage gaps: keep the snapshot; do not re-run the file or force a
   full mutation because mutate exited non-zero.
-- Mail files are queues `{:next-id n :queue [cmd …]}`. Drain every item
-  with id greater than last seen, oldest first.
+- Mail files are queues `{:next-id n :queue [cmd …]}`. Pop the head of
+  `:queue` as you handle it (rewrite the file). Oldest first.
 - Right-click mail (`to-agent.edn`): `:refresh-crap` → `clj -M:crap` for
   that class or component then IR. `:refresh-mutate` → differential
   `clj -M:mutate` on those src files. `:refresh-mutate-all` →
