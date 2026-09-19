@@ -206,6 +206,14 @@
         (should-contain "C" (texts log))
         (should-contain "M" (texts log)))))
 
+  (it "draws a back link when a proposal layer is open"
+    (record-quil
+      (fn [log]
+        (call 'draw-state {:scene {:diagram {:title "Quil/Swing" :proposal true}
+                                   :packages [] :classes [] :edges []}
+                           :open-layer :quil-swing :cam-x 0 :cam-y 0})
+        (should-contain "← Quil/Swing" (texts log)))))
+
   (it "paints package titles after arrows"
     (record-quil
       (fn [log]

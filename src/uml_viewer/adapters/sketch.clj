@@ -331,11 +331,22 @@
         (front! (native-window ap)))
       (catch Exception _))))
 
+(defn- swallow-esc!
+  "Stop Processing from treating ESC as quit."
+  [event]
+  (when (or (= :esc (:key event)) (= 27 (:key-code event)))
+    (try
+      (when-let [ap (applet/current-applet)]
+        (set! (.-key ap) (char 0)))
+      (catch Exception _))))
+
 (defn- close-detail-window! []
   (when-let [ap (:applet @!bridge)]
     (swap! !bridge assoc :exiting true :applet nil)
     (try
-      (applet/with-applet ap (q/exit))
+      (when-let [native (native-window ap)]
+        (when (instance? java.awt.Window native)
+          (.dispose ^java.awt.Window native)))
       (catch Exception _))))
 
 (defn- quit-for-restart! []
@@ -419,8 +430,9 @@
 
 (defn- detail-key-pressed [state event]
   (when (= :esc (:key event))
+    (swallow-esc! event)
     (swap! !bridge assoc :closed? true)
-    (q/exit))
+    (close-detail-window!))
   state)
 
 (defn- detail-on-close [state]
@@ -716,6 +728,7 @@
                    (events/on-move state (:x event) (:y event)))
     :mouse-wheel #'on-main-wheel
     :key-pressed (fn [state event]
+                   (swallow-esc! event)
                    (events/on-key state (:key event)
                                   (assoc (view-dims)
                                     :control? (boolean
@@ -723,5 +736,8 @@
                                                       (:modifiers event)))
                                     :key-code (:key-code event)
                                     :raw-key (:raw-key event))))
+    :key-released (fn [state event]
+                    (swallow-esc! event)
+                    state)
     :on-close #'on-main-close
     :middleware [m/fun-mode])))

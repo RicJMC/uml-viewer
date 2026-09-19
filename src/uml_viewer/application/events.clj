@@ -198,7 +198,8 @@
          (>= y (:y r)) (< y (+ (:y r) (:h r))))))
 
 (defn on-press [state x y]
-  (if (and (seq (:focus state)) (< y 44) (< x 320))
+  (if (and (or (seq (:focus state)) (:open-layer state))
+           (< y 44) (< x 320))
     (back state)
     (let [[wx wy] (world-xy state x y)
           hit (hit/at (:scene state) wx wy)]
@@ -287,7 +288,7 @@
        :right (on-scroll state 2 (assoc dims :horizontal? true))
        :up (on-scroll state -2 dims)
        :down (on-scroll state 2 dims)
-       :esc (if (seq (:focus state))
+       :esc (if (or (seq (:focus state)) (:open-layer state))
               (back state)
               (assoc state :selected nil))
        :r (-> state (dissoc :waiting) (assoc :mtime 0))

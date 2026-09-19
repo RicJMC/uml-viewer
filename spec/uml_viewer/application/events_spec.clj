@@ -159,7 +159,9 @@
           back (events/back opened)]
       (should= :quil-swing (:open-layer opened))
       (should= [] (:focus opened))
-      (should-be-nil (:open-layer back))))
+      (should-be-nil (:open-layer back))
+      (should-be-nil (:open-layer (events/on-key opened :esc)))
+      (should-be-nil (:open-layer (events/on-press opened 20 20)))))
 
   (it "cycles declutter none → arrows → remove arrows → elements → classes → none"
     (let [s {:declutter :full}]

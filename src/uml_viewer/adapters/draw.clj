@@ -630,11 +630,15 @@
         (rgb muted)
         (q/text-size 12)
         (q/text (get-in state [:scene :diagram :title]) 12 8))))
-  (when (seq (:focus state))
+  (when (or (seq (:focus state)) (:open-layer state))
     (rgb gold)
     (q/text-align :left :top)
     (q/text-size 14)
-    (q/text (str "← " (str/join "." (map name (:focus state)))) 12 28))
+    (let [label (if (seq (:focus state))
+                  (str/join "." (map name (:focus state)))
+                  (or (get-in state [:scene :diagram :title])
+                      (name (:open-layer state))))]
+      (q/text (str "← " label) 12 28)))
   (draw-edge-popup (:hover state) (:pointer state)))
 
 (defn- detail-row-color [row]

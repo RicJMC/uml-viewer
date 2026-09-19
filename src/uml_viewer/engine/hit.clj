@@ -41,8 +41,20 @@
        [(+ cx half) (geom/bottom r)]
        [cx (+ (geom/bottom r) triangle-h)]])))
 
+(defn- leaf-pairs [e]
+  (vec (or (deps-of e) [])))
+
+(defn- deps-for
+  "Leaf pairs for `id`: its own endpoints, or leaves riding a collapsed arrow."
+  [edges id dir]
+  (let [end (if (= dir :in) :to :from)
+        as-box (mapcat leaf-pairs (filter #(= id (end %)) edges))
+        as-leaf (filterv #(= id (end %)) (mapcat leaf-pairs edges))]
+    (vec (if (seq as-leaf) as-leaf as-box))))
+
 (defn dep-indicators
-  "Incoming/outgoing triangles for each class that has edges."
+  "Incoming/outgoing triangles for each class that has edges, including
+  children whose deps ride a collapsed container arrow."
   [scene]
   (let [edges (or (:edges scene) [])]
     (vec
@@ -50,16 +62,15 @@
         (fn [c]
           (when-let [r (:rect c)]
             (let [id (:id c)
-                  incoming (filterv #(= id (:to %)) edges)
-                  outgoing (filterv #(= id (:from %)) edges)
-                  pack (fn [dir es]
-                         (when (seq es)
-                           (let [deps (mapcat deps-of es)]
-                             {:id id
-                              :dir dir
-                              :triangle (class-triangle r dir)
-                              :violating (boolean (some :violating deps))
-                              :deps (vec deps)})))]
+                  incoming (deps-for edges id :in)
+                  outgoing (deps-for edges id :out)
+                  pack (fn [dir deps]
+                         (when (seq deps)
+                           {:id id
+                            :dir dir
+                            :triangle (class-triangle r dir)
+                            :violating (boolean (some :violating deps))
+                            :deps (vec deps)}))]
               (cond-> []
                 (seq incoming) (conj (pack :in incoming))
                 (seq outgoing) (conj (pack :out outgoing))))))

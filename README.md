@@ -105,7 +105,9 @@ Rename or move of a function is a new form: overlay does not match old names.
 
 - First view: **namespace components** (layers). Dependencies between them
   collapse to one arrow. Each component lists nested namespaces.
-- Double-click a component to open the next level. Esc or the ← label goes up.
+- Double-click a component to open the next level. Esc or the ← label goes
+  up a level, including after drilling a proposal group. Esc does not quit.
+  The window close box or a `:quit-for-restart` mail message exits the app.
 - Hover an arrow for a popup of every `from -> to` it bundles, in any
   declutter mode. Violating pairs are red.
 - Right-click a class or component for **Refresh CRAP**, **Refresh
@@ -123,8 +125,9 @@ Rename or move of a function is a new form: overlay does not match old names.
   **Declutter** cycles Declutter arrows / Remove arrows / Declutter
   elements / Declutter classes / Declutter none. **Remove arrows** hides
   the lines and puts a triangle on the top (incoming) and bottom
-  (outgoing) of each box. A triangle is red if any bundled pair is
-  violating. Hover it for the `from -> to` list.
+  (outgoing) of each box, **including nested classes** as well as their
+  packages. A triangle is red if any bundled pair is violating. Hover it
+  for the `from -> to` list.
 - Double-click a leaf module for its **class card**.
 - The class card names the **module** (`:ns`). Click it to open that source
   file at the top. Hover a member to highlight it; click it to open the same
@@ -144,7 +147,8 @@ Rename or move of a function is a new form: overlay does not match old names.
   (see [Companion mailbox](#companion-mailbox)).
 - `R` reloads the current EDN (the watcher also reloads on save). Overlay
   re-reads `.metrics/` on the next load.
-- `Esc` on the class card closes it. Closing the main window exits the app.
+- `Esc` on the class card closes it (it does not quit the viewer). Closing
+  the main window exits the app.
 
 ## Policy
 
@@ -287,11 +291,13 @@ The inspector lists the real diagram (the namespace tree) just above
 (canvas marked **PROPOSAL — not instantiated in code**). Either click
 tells the companion that diagram is the context of discussion. **New
 Proposal** adds an empty proposal named with a timestamp. Right-click a
-name to rename or delete it. Double-click a ns box to drill the real tree.
+name to rename or delete it. Double-click a ns box to drill; **←** at the
+top returns to the proposal.
 
 The **Declutter** button cycles **Declutter arrows** (one arrow per
 component pair per direction) → **Remove arrows** (triangles on each box
-instead of lines; hover lists deps; red if any pair is violating) →
+and on nested classes instead of lines; hover lists deps; red if any pair
+is violating) →
 **Declutter elements** (also hide nested names, members, and ports) →
 **Declutter classes** (also hide classes inside components) →
 **Declutter none**.
