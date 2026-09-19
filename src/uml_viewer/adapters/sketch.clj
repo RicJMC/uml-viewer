@@ -48,8 +48,9 @@
        "   Uncovered mutants are coverage gaps: keep the snapshot; do not\n"
        "   re-run the file or pass --mutate-all because of them.\n"
        "4. Regenerate the IR so the EDN mtime updates.\n"
-       "Mailbox: the viewer writes .uml-viewer/to-agent.edn; you write\n"
-       ".uml-viewer/to-viewer.edn (atomic: tmp then rename). Ops are\n"
+       "Mailbox: .uml-viewer/to-agent.edn and to-viewer.edn are queues\n"
+       "{:next-id n :queue [cmd …]} (atomic: tmp then rename). Pop the head of\n"
+       ":queue as you handle it (rewrite the file). Oldest first. Ops are\n"
        "{:id n :op :display :path \"...\"}, {:id n :op :regen},\n"
        "{:id n :op :quit-for-restart}, {:id n :op :context ...},\n"
        "and right-click element ops:\n"
@@ -65,8 +66,8 @@
        "{:context :real} for the namespace tree, or {:context :proposal\n"
        " :proposal-id id :name \"...\"} for a named proposal. Treat that as\n"
        "the architecture under discussion until a later :context arrives.\n"
-       "A tmux wake-up means mail is waiting. If idle, read to-agent.edn\n"
-       "and do that command. If busy, finish first. Do not send tmux yourself.\n"
+       "A tmux wake-up means mail is waiting. If idle, pop and handle each\n"
+       "to-agent command in order. If busy, finish first. Do not send tmux yourself.\n"
        "After regen, write :display with the generated EDN path.\n"
        "The examined project must have aliases :uml-viewer (fresh start: spawn\n"
        "this companion, wait for :display) and :uml-viewer-restart (new JVM,\n"
@@ -330,11 +331,22 @@
         (front! (native-window ap)))
       (catch Exception _))))
 
+(defn- swallow-esc!
+  "Stop Processing from treating ESC as quit."
+  [event]
+  (when (or (= :esc (:key event)) (= 27 (:key-code event)))
+    (try
+      (when-let [ap (applet/current-applet)]
+        (set! (.-key ap) (char 0)))
+      (catch Exception _))))
+
 (defn- close-detail-window! []
   (when-let [ap (:applet @!bridge)]
     (swap! !bridge assoc :exiting true :applet nil)
     (try
-      (applet/with-applet ap (q/exit))
+      (when-let [native (native-window ap)]
+        (when (instance? java.awt.Window native)
+          (.dispose ^java.awt.Window native)))
       (catch Exception _))))
 
 (defn- quit-for-restart! []
@@ -418,8 +430,9 @@
 
 (defn- detail-key-pressed [state event]
   (when (= :esc (:key event))
+    (swallow-esc! event)
     (swap! !bridge assoc :closed? true)
-    (q/exit))
+    (close-detail-window!))
   state)
 
 (defn- detail-on-close [state]
@@ -467,7 +480,7 @@
    (q/smooth)
    (q/text-font (q/create-font "SansSerif" 14 true))
    (if restart?
-     (document/load-path path)
+     (document/restart-state path)
      (document/waiting-state path))))
 
 (defn- view-dims []
@@ -504,7 +517,9 @@
 (defn update-state [state]
   (let [state (-> state document/maybe-reload document/poll-mail)]
     (if (:quit-for-restart state)
-      (do (quit-for-restart!) state)
+      (do (document/save-session! state)
+          (quit-for-restart!)
+          state)
       (apply-bridge-flags state))))
 
 (defn- open-card! [state id]
@@ -719,6 +734,7 @@
                    (events/on-move state (:x event) (:y event)))
     :mouse-wheel #'on-main-wheel
     :key-pressed (fn [state event]
+                   (swallow-esc! event)
                    (events/on-key state (:key event)
                                   (assoc (view-dims)
                                     :control? (boolean
@@ -726,5 +742,8 @@
                                                       (:modifiers event)))
                                     :key-code (:key-code event)
                                     :raw-key (:raw-key event))))
+    :key-released (fn [state event]
+                    (swallow-esc! event)
+                    state)
     :on-close #'on-main-close
     :middleware [m/fun-mode])))

@@ -23,7 +23,8 @@
                            :crap 1.8
                            :killed 3
                            :survived 1
-                           :uncovered 2}
+                           :uncovered 2
+                           :sites 6}
                           {:name "hide" :private true :crap 4.0}]}
                    {:id :b :name "B"}]}]
        :edges [{:from :a :to :b :kind :dependency}]})))
@@ -84,6 +85,20 @@
       (should= "go" (detail/member-at rows (+ (:y go) 1)))
       (should-be-nil (detail/member-at rows (:y cls)))
       (should= "hide" (detail/member-at rows (+ (:y hide) 1)))))
+
+  (it "does not treat untested operators as no mutation sites"
+    (let [s (compose/compile-diagram
+              (ir/normalize
+                {:packages
+                 [{:id :p :label "P"
+                   :classes [{:id :d :name "D"
+                              :ops [{:name "go" :text "go()"
+                                     :killed 0 :survived 0 :uncovered 0 :sites 4}]}]}]
+                 :edges []}))
+          rows (detail/rows (detail/model s :d))
+          go (first (filter #(= "go" (:op-name %)) rows))]
+      (should-be-nil (:mut-note go))
+      (should= "0" (:killed-s go))))
 
   (it "shows class CRAP as μ, omits CC, and prefixes μ/max/σ with Crap"
     (let [s (compose/compile-diagram

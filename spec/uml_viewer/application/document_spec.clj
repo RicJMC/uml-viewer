@@ -35,6 +35,23 @@
       (should (seq (:classes (:scene s))))
       (should (pos? (:mtime s)))))
 
+  (it "restores pan, zoom, and declutter after restart"
+    (let [root (doto (io/file "target" (str "restart-" (System/nanoTime)))
+                 (.mkdirs))
+          metrics (io/file root ".metrics")
+          edn (io/file root "d.edn")]
+      (.mkdirs metrics)
+      (spit edn (slurp "examples/library.edn"))
+      (mailbox/write-session! root {:cam-x 40 :cam-y 20 :zoom 1.1
+                                    :declutter :arrows :focus []})
+      (let [s (document/restart-state (.getPath edn))]
+        (should= 40 (:cam-x s))
+        (should= 20 (:cam-y s))
+        (should= 1.1 (:zoom s))
+        (should= :arrows (:declutter s))
+        (should-not (:waiting s))
+        (should (seq (:classes (:scene s)))))))
+
   (it "compiles named proposal packages at the root and the ns tree otherwise"
     (let [doc {:hierarchical true
                :title "Demo"

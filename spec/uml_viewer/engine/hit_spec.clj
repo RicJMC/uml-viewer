@@ -68,6 +68,21 @@
       (should= :dep (:kind (hit/indicator-at (assoc scene :dep-indicators inds)
                                             ox oy)))))
 
+  (it "puts triangles on a child whose deps ride a collapsed arrow"
+    (let [child {:id :sketch :rect {:x 10 :y 10 :w 40 :h 20}}
+          dummy {:id :ui :dummy? true :rect {:x 0 :y 0 :w 80 :h 80}}
+          other {:id :host :rect {:x 0 :y 120 :w 40 :h 20}}
+          e {:from :ui :to :host :kind :dependency
+             :deps [{:from :sketch :to :cli :violating true}]}
+          scene {:classes [child dummy other] :edges [e]}
+          inds (hit/dep-indicators scene)
+          child-out (first (filter #(and (= :sketch (:id %)) (= :out (:dir %))) inds))
+          box-out (first (filter #(and (= :ui (:id %)) (= :out (:dir %))) inds))]
+      (should child-out)
+      (should box-out)
+      (should (:violating child-out))
+      (should= [{:from :sketch :to :cli :violating true}] (:deps child-out))))
+
   (it "hits an arrow and lists its leaf deps"
     (let [e {:from :a :to :b :points [[0 0] [100 0] [200 0]]
              :deps [{:from :a :to :b :violating false}]}

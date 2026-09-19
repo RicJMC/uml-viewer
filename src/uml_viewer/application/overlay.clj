@@ -81,7 +81,8 @@
                                :killed (:killed form)
                                :survived (:survived form)
                                :uncovered (:uncovered form)
-                               :mutation-status (:status form))]))
+                               :mutation-status (:status form)
+                               :sites (or (:sites form) (:total form)))]))
               (:forms snapshot))))
 
 (defn class-namespace
@@ -113,7 +114,8 @@
                    :coverage (pct->ratio (:coverage crap-fn)))
     mut-fn (assoc :killed (or (:killed mut-fn) 0)
                   :survived (or (:survived mut-fn) 0)
-                  :uncovered (or (:uncovered mut-fn) 0))
+                  :uncovered (or (:uncovered mut-fn) 0)
+                  :sites (or (:sites mut-fn) 0))
     (:mutation-status mut-fn) (assoc :mutation-status (:mutation-status mut-fn))
     (or (:private op) (:private mut-fn)) (assoc :private true)))
 
@@ -139,7 +141,8 @@
         ops (ops-for-class c crap-fns mut-fns)
         killed (apply + 0 (keep :killed (vals mut-fns)))
         survived (apply + 0 (keep :survived (vals mut-fns)))
-        uncovered (apply + 0 (keep :uncovered (vals mut-fns)))]
+        uncovered (apply + 0 (keep :uncovered (vals mut-fns)))
+        sites (apply + 0 (keep :sites (vals mut-fns)))]
     (cond-> c
       (seq scores) (assoc :crap (class-crap scores)
                           :cc (apply + (map :complexity crap-fns)))
@@ -150,7 +153,8 @@
       (assoc :mutation-status
              (if (every? #(= "complete" (:mutation-status %)) (vals mut-fns))
                "complete" "partial"))
-      (seq mut-fns) (assoc :killed killed :survived survived :uncovered uncovered)
+      (seq mut-fns) (assoc :killed killed :survived survived :uncovered uncovered
+                           :sites sites)
       (seq ops) (assoc :ops ops))))
 
 (defn- paint-packages [packages metrics]

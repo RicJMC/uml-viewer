@@ -14,6 +14,7 @@
             [uml-viewer.domain.mailbox :as mailbox]
             [uml-viewer.domain.policy :as policy]
             [uml-viewer.application.document :as document]
+            [uml-viewer.application.detail :as detail]
             [uml-viewer.adapters.core :as core]
             [uml-viewer.adapters.sketch :as sketch]
             [uml-viewer.main.uml-viewer :as viewer]
@@ -81,11 +82,14 @@
   (it "removes stale scores and marks them unknown"
     (let [document {:metrics-mode :verified :source-root "sample"
                     :hierarchical true :classes [{:id :sample :name "Sample"
-                    :crap {:mu 2} :coverage 1.0 :ops [{:name "run" :cc 2}]}]}
+                    :crap {:mu 2} :coverage 1.0 :sites 3
+                    :ops [{:name "run" :cc 2 :sites 3}]}]}
           result (overlay/apply-metrics document {:status "stale"})
           component (first (:classes result))]
       (should= "missing" (:metrics-status component))
       (should-be-nil (:coverage component))
+      (should-be-nil (:sites component))
+      (should-be-nil (:sites (first (:ops component))))
       (should-be-nil (draw/crap-grade-of component))
       (should-be-nil (:cc (first (:ops component))))))
 
@@ -108,11 +112,14 @@
         (with-redefs [sketch/notify-agent! (fn [] (swap! notifications inc) true)]
           (doseq [operation [:context :refresh-crap :refresh-mutate
                             :refresh-mutate-all :omit]]
-            (let [result (sketch/request-agent! root operation {:target target})
-                  command (mailbox/read-command (mailbox/to-agent root))]
-              (should= operation (:op command))
-              (should= target (:target command))
+            (let [result (sketch/request-agent! root operation {:target target})]
               (should= false (:woke? result)))))
+        (doseq [operation [:context :refresh-crap :refresh-mutate
+                          :refresh-mutate-all :omit]]
+          (let [command (mailbox/take-command! (mailbox/to-agent root))]
+            (should= operation (:op command))
+            (should= target (:target command))))
+        (should-be-nil (mailbox/take-command! (mailbox/to-agent root)))
         (should= 0 @notifications)
         (finally
           (reset! sketch/!bridge previous)
@@ -139,6 +146,37 @@
           (io/delete-file out true))))))
 
 (describe "Python diagrams with upstream display controls"
+  (it "shows completed Python mutation sites in the class card"
+    (let [component {:id :book.Book :name "Book" :ns "library.book.Book"
+                     :metrics-status "current" :ops [{:name "borrow"}]}
+          mutants {"library.book.Book"
+                   {:forms [{:name "borrow" :killed 1 :survived 1 :uncovered 0
+                             :status "complete" :total 2}]}}
+          painted (overlay/overlay-class component {} mutants)
+          rows (detail/rows {:class painted})
+          member (first (filter #(= "borrow" (:op-name %)) rows))]
+      (should= 2 (:sites painted))
+      (should-be-nil (:mut-note member))
+      (should= "1" (:killed-s member))
+      (should= "1" (:survived-s member))))
+
+  (it "keeps partial measurements neutral inside a nested proposal group"
+    (let [diagram {:hierarchical true
+                   :classes [{:id :catalog.MemoryCatalog :name "MemoryCatalog"
+                              :metrics-status "current" :mutation-status "partial"
+                              :killed 1 :survived 0}]
+                   :edges []
+                   :proposals [{:id :design :layers
+                                [{:id :library :nses
+                                  [{:id :storage :label "Storage"
+                                    :nses [:catalog.MemoryCatalog]}]}]}]}
+          view (hierarchy/proposal-view diagram :design)
+          group (first (filter #(= :storage (:id %))
+                               (mapcat :classes (:packages view))))]
+      (should= "partial" (:mutation-status group))
+      (should-be-nil (draw/mutation-grade-of group))
+      (should= [:catalog.MemoryCatalog] (mapv :id (:members group)))))
+
   (it "keeps Python dependencies visible as triangles and honors policy omissions"
     (let [graph (graph/scan python-graph/impl "examples/python/library" {:prefix "library"})
           options (generator/read-policy "examples/python.policy.edn")

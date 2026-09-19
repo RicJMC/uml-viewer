@@ -164,21 +164,19 @@
         (finally
           (.dispose frame)))))
 
-  (it "closes the detail applet and swallows exit errors"
-    (let [exited (atom false)]
+  (it "closes the detail applet by disposing its window"
+    (let [disposed (atom false)
+          frame (proxy [Frame] []
+                  (dispose [] (reset! disposed true)))]
       (call 'close-detail-window!)
       (should-be-nil (:applet @sketch/!bridge))
-      (reset! sketch/!bridge (assoc (empty-bridge) :applet (->Finished false)))
-      (with-redefs [q/exit (fn [] (reset! exited true))]
-        (call 'close-detail-window!)
-        (should @exited)
-        (should-be-nil (:applet @sketch/!bridge))
-        (should (:exiting @sketch/!bridge)))
-      (reset! sketch/!bridge (assoc (empty-bridge) :applet (->Finished false)))
-      (with-redefs [q/exit (fn [] (throw (Exception. "exit")))]
-        (call 'close-detail-window!)
-        (should-be-nil (:applet @sketch/!bridge))
-        (should (:exiting @sketch/!bridge)))))
+      (reset! sketch/!bridge
+              (assoc (empty-bridge)
+                :applet (->FakeApplet false (->FakeSurface frame (atom nil)))))
+      (call 'close-detail-window!)
+      (should @disposed)
+      (should-be-nil (:applet @sketch/!bridge))
+      (should (:exiting @sketch/!bridge)))))
 
   (it "runs a function on the swing thread"
     (let [done (CountDownLatch. 1)
@@ -294,18 +292,20 @@
         (should= (:id rel) (:pick @sketch/!bridge))
         (reset! sketch/!bridge (assoc (empty-bridge) :model model :pick nil))
         (call 'detail-mouse-pressed {:scroll 0} {:y 0})
-        (should-be-nil (:pick @sketch/!bridge))))))
+        (should-be-nil (:pick @sketch/!bridge)))))
 
 (describe "sketch keys and lifecycle"
   (before (reset! sketch/!bridge (empty-bridge)))
 
-  (it "closes the detail window on escape"
-    (let [exited (atom false)]
-      (with-redefs [q/exit (fn [] (reset! exited true))]
+  (it "closes the detail window on escape without quitting Processing"
+    (let [closed (atom false)]
+      (with-redefs [uml-viewer.adapters.sketch/close-detail-window!
+                    (fn [] (reset! closed true))
+                    uml-viewer.adapters.sketch/swallow-esc! (fn [_])]
         (should= :state (call 'detail-key-pressed :state {:key :x}))
-        (should-not @exited)
+        (should-not @closed)
         (call 'detail-key-pressed :state {:key :esc})
-        (should @exited)
+        (should @closed)
         (should (:closed? @sketch/!bridge)))))
 
   (it "marks the card closed unless the main window is exiting it"
@@ -369,20 +369,23 @@
   (it "loads the EDN immediately on restart"
     (quiet-quil
       (fn []
-        (with-redefs [document/load-path (fn [p] {:path p :loaded true})]
+        (with-redefs [document/restart-state (fn [p] {:path p :loaded true})]
           (should= {:path "doc.edn" :loaded true} (sketch/setup "doc.edn" true))))))
 
   (it "quits for restart when mail says so"
     (let [quit (atom 0)
-          continued (atom 0)]
+          continued (atom 0)
+          saved (atom nil)]
       (with-redefs [document/maybe-reload identity
                     document/poll-mail (fn [s] (assoc s :quit-for-restart true))
+                    document/save-session! (fn [s] (reset! saved s) s)
                     uml-viewer.adapters.sketch/quit-for-restart! (fn [] (swap! quit inc))
                     uml-viewer.adapters.sketch/apply-bridge-flags (fn [s] (swap! continued inc) s)
                     uml-viewer.adapters.sketch/halt-vm! (fn [])]
         (should= true (:quit-for-restart (sketch/update-state (state))))
         (should= 1 @quit)
-        (should= 0 @continued))))
+        (should= 0 @continued)
+        (should @saved))))
 
   (it "does not quit for restart on ordinary updates"
     (let [quit (atom 0)
@@ -605,7 +608,9 @@
               (should= [:s :unknown-key {:window-w 1500 :window-h 920 :view-w 1220
                                          :control? true :key-code 45 :raw-key \-}]
                        @keyed)
-              (should= :s ((:on-close @opts) :s))))))))
+              (should= :s ((:on-close @opts) :s))
+              (should (fn? (:key-released @opts)))
+              (should= :s ((:key-released @opts) :s {:key :esc}))))))))
 
 (describe "grok session"
   (it "mails discussion context for the real diagram and a proposal"
@@ -656,6 +661,7 @@
       (should (re-find #":refresh-mutate-all" sketch/standing-rules))
       (should (re-find #":omit" sketch/standing-rules))
       (should (re-find #":context" sketch/standing-rules))
+      (should (re-find #":queue" sketch/standing-rules))
       (should (re-find #":quit-for-restart" sketch/standing-rules))
       (should (re-find #"uml-viewer-restart" sketch/standing-rules))
       (should-not (re-find #":reload" sketch/standing-rules))

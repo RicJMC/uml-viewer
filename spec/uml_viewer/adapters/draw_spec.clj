@@ -206,6 +206,14 @@
         (should-contain "C" (texts log))
         (should-contain "M" (texts log)))))
 
+  (it "draws a back link when a proposal layer is open"
+    (record-quil
+      (fn [log]
+        (call 'draw-state {:scene {:diagram {:title "Quil/Swing" :proposal true}
+                                   :packages [] :classes [] :edges []}
+                           :open-layer :quil-swing :cam-x 0 :cam-y 0})
+        (should-contain "← Quil/Swing" (texts log)))))
+
   (it "paints package titles after arrows"
     (record-quil
       (fn [log]
@@ -501,9 +509,12 @@
         (should= [] (of log :text))
         (reset! log [])
         (call 'draw-detail-row {:kind :stats :text "idle"
+                                :crap-s "2.7" :crap-n 2.7 :cov-s "78%"
                                 :mut-note "---no mutation sites---" :y 0 :h 18}
               false)
-        (should-contain "---no mutation sites---" (texts log)))))
+        (should-contain "---no mutation sites---" (texts log))
+        (should-contain "2.7" (texts log))
+        (should-contain "78%" (texts log)))))
 
   (it "paints stats cells with coverage and mutation colors"
     (record-quil

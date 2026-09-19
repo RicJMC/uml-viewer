@@ -56,6 +56,7 @@
                (contains? x :uncovered) (assoc :uncovered (as-count (:uncovered x)))
                (:metrics-status x) (assoc :metrics-status (:metrics-status x))
                (:mutation-status x) (assoc :mutation-status (:mutation-status x))
+               (contains? x :sites) (assoc :sites (as-count (:sites x)))
                (contains? x :cc) (assoc :cc (as-cc (:cc x)))
                (contains? x :crap) (assoc :crap (as-crap (:crap x)))
                (true? (:private x)) (assoc :private true)
@@ -76,6 +77,7 @@
              :killed (as-count (:killed c))
              :survived (as-count (:survived c))
              :uncovered (as-count (:uncovered c))
+             :sites (as-count (:sites c))
              :hide-members (boolean (:hide-members c))
              :fields (mapv as-member (:fields c))
              :ops (mapv as-member (:ops c))}

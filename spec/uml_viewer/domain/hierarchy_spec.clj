@@ -51,6 +51,20 @@
       (should= "Unassigned" (:label last-pkg))
       (should (some #{:ir} (map :id (:classes last-pkg))))))
 
+  (it "gives a component the max level of its elements"
+    (let [doc {:hierarchical true
+               :classes [{:id :engine :name "Engine" :level 0}
+                         {:id :engine.layout :name "Layout" :level 2}
+                         {:id :ir :name "Ir" :level 0}]
+               :edges []
+               :order [:engine :ir]}
+          view (hierarchy/view-at doc [])
+          box (fn [id]
+                (first (filter #(= id (:id %))
+                               (mapcat :classes (:packages view)))))]
+      (should= 2 (:level (box :engine)))
+      (should= 0 (:level (box :ir)))))
+
   (it "hides policy-omitted nses from the namespace tree"
     (let [doc (assoc (policy/apply-policy policy graph) :omit [:layout])
           view (hierarchy/view-at doc [])
@@ -68,6 +82,103 @@
           ids (mapcat #(map :id (:classes %)) (:packages view))]
       (should-not (some #{:ir} ids))
       (should (some #{:source} ids))))
+
+  (it "groups nested class ids into a proposal layer"
+    (let [p (assoc policy
+              :proposals [{:id :split :name "split"
+                           :layers [{:id :host :label "JVM host" :nses [:jvm.cli]}
+                                    {:id :ui :label "JVM UI" :nses [:jvm.sketch]}]}]
+              :order [:jvm :ir])
+          g {:classes [{:id :jvm.cli :name "Cli" :ns "demo.jvm.cli"}
+                       {:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}
+                       {:id :ir :name "Ir" :ns "demo.ir"}]
+             :edges [{:from :jvm.sketch :to :jvm.cli :kind :dependency}]}
+          doc (policy/apply-policy p g)
+          view (hierarchy/proposal-view doc :split)
+          host (first (filter #(= :proposal.host (:id %)) (:packages view)))
+          ui (first (filter #(= :proposal.ui (:id %)) (:packages view)))]
+      (should= [:jvm.cli] (mapv :id (:classes host)))
+      (should= [:jvm.sketch] (mapv :id (:classes ui)))))
+
+  (it "keeps leaf arrows after a nested-id split"
+    (let [p (assoc policy
+              :proposals [{:id :split :name "split"
+                           :layers [{:id :host :label "JVM host" :nses [:jvm.cli]}
+                                    {:id :ui :label "JVM UI" :nses [:jvm.sketch]}]}]
+              :order [:jvm :ir])
+          g {:classes [{:id :jvm.cli :name "Cli" :ns "demo.jvm.cli"}
+                       {:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}
+                       {:id :quil.core :name "quil.core" :foreign true}]
+             :edges [{:from :jvm.sketch :to :jvm.cli :kind :dependency}
+                     {:from :jvm.sketch :to :quil.core :kind :dependency}]}
+          view (hierarchy/proposal-view (policy/apply-policy p g) :split)
+          ends (set (map (juxt :from :to) (:edges view)))]
+      (should (contains? ends [:jvm.sketch :jvm.cli]))
+      (should (some #{[:jvm.sketch :quil] [:jvm.sketch :quil.core]} ends))))
+
+  (it "nests a group map as a child component of a proposal layer"
+    (let [p (assoc policy
+              :proposals [{:id :split :name "split"
+                           :layers [{:id :jvm :label "JVM"
+                                     :nses [:jvm.cli
+                                            {:id :quil-swing
+                                             :label "Quil/Swing"
+                                             :nses [:jvm.sketch]}]}]}]
+              :order [:jvm])
+          g {:classes [{:id :jvm.cli :name "Cli" :ns "demo.jvm.cli"}
+                       {:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}
+                       {:id :quil.core :name "quil.core" :foreign true}]
+             :edges [{:from :jvm.sketch :to :jvm.cli :kind :dependency}
+                     {:from :jvm.sketch :to :quil.core :kind :dependency}]}
+          view (hierarchy/proposal-view (policy/apply-policy p g) :split)
+          jvm (first (filter #(= :proposal.jvm (:id %)) (:packages view)))
+          ids (mapv :id (:classes jvm))
+          quil (first (filter #(= :quil-swing (:id %)) (:classes jvm)))
+          ends (set (map (juxt :from :to) (:edges view)))]
+      (should= [:jvm.cli :quil-swing] ids)
+      (should-not (some #(= :proposal.quil-swing (:id %)) (:packages view)))
+      (should= "Quil/Swing" (:name quil))
+      (should= [:jvm.sketch] (mapv :id (:contents quil)))
+      (should (contains? ends [:quil-swing :jvm.cli]))
+      (should (some #{[:quil-swing :quil] [:quil-swing :quil.core]} ends))))
+
+  (it "drills a nested group into its member classes"
+    (let [p (assoc policy
+              :proposals [{:id :split :name "split"
+                           :layers [{:id :jvm :label "JVM"
+                                     :nses [:jvm.cli
+                                            {:id :quil-swing
+                                             :label "Quil/Swing"
+                                             :nses [:jvm.sketch]}]}]}]
+              :order [:jvm])
+          g {:classes [{:id :jvm.cli :name "Cli" :ns "demo.jvm.cli"}
+                       {:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}
+                       {:id :quil.core :name "quil.core" :foreign true}]
+             :edges [{:from :jvm.sketch :to :jvm.cli :kind :dependency}
+                     {:from :jvm.sketch :to :quil.core :kind :dependency}]}
+          doc (policy/apply-policy p g)
+          view (hierarchy/layer-view doc :split :quil-swing)
+          pkg (first (:packages view))
+          ends (set (map (juxt :from :to) (:edges view)))]
+      (should= :quil-swing (:id pkg))
+      (should= [:jvm.sketch] (mapv :id (:classes pkg)))
+      (should-not (some #{:jvm.cli :quil-swing} (map :id (:classes pkg))))
+      (should (some #{[:jvm.sketch :quil] [:jvm.sketch :quil.core]} ends))))
+
+  (it "does not wrap a top-level layer in a same-named inner component"
+    (let [p (assoc policy
+              :proposals [{:id :layers :name "layers"
+                           :layers [{:id :game-api :label "Game API"
+                                     :nses [:game-api]}]}]
+              :order [:game-api])
+          g {:classes [{:id :game-api.core :name "Core"
+                        :ns "demo.game-api.core"}]}
+          view (hierarchy/proposal-view (policy/apply-policy p g) :layers)
+          pkg (first (filter #(= :proposal.game-api (:id %))
+                             (:packages view)))
+          ids (mapv :id (:classes pkg))]
+      (should= [:game-api.core] ids)
+      (should-not (some #{:game-api} ids))))
 
   (it "collapses arrows between proposal packages to one per direction"
     (let [p (assoc policy

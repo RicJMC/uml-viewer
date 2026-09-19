@@ -11,8 +11,8 @@
        "\n"
        "  --restart         Associated agent only (via :uml-viewer-restart).\n"
        "                    New JVM, keep the existing Grok tmux session.\n"
-       "                    Loads the EDN immediately (does not wait for\n"
-       "                    :display). Do not use this if no companion is attached.\n"
+       "                    Reloads the last view (depth, pan, zoom, proposal).\n"
+       "                    Do not use this if no companion is attached.\n"
        "\n"
        "  --standalone      Load without starting or stopping a companion agent.\n"
        "  -h, --help        Print this help and exit.\n"))

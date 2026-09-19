@@ -85,7 +85,9 @@ instructions for agents are in [AGENTS.md](AGENTS.md).
 
 Right-click actions and diagram selections also write the upstream mailbox,
 `.uml-viewer/to-agent.edn`. In standalone mode they do not wake Grok or launch
-an agent. Ask your local agent to read this file and handle the request.
+an agent. Ask your local agent to handle its `:queue` oldest first and remove
+each handled entry. Preserve `:next-id` and other queued entries when writing
+the envelope. See [Companion mailbox](#companion-mailbox) for the format.
 For Python quality requests, use the measurement command below, not the
 Clojure quality aliases. It measures the configured source package; it does
 not currently limit a campaign to the clicked class. `:omit` changes the
@@ -180,15 +182,16 @@ The examined project (and this one) must expose two aliases:
 | Alias | Who | What |
 |-------|-----|------|
 | `:uml-viewer` | anyone | Fresh window. Starts the companion. Waits for `:display`. |
-| `:uml-viewer-restart` | **associated agent only** | New JVM, same companion. Loads the EDN immediately. |
+| `:uml-viewer-restart` | **associated agent only** | New JVM, same companion. Restores the last view. |
 
 Do **not** pass `--restart` (or use `:uml-viewer-restart`) unless you are that
 companion recycling the window after source changes. A stray `--restart`
 skips spawning Grok and leaves a diagram with no agent. The companion
 recycles the window by writing `:quit-for-restart` to
 `.uml-viewer/to-viewer.edn`, waiting for the JVM to exit, then
-`clj -M:uml-viewer-restart`. Do not SIGKILL. Closing the window still kills
-Grok.
+`clj -M:uml-viewer-restart`. The new JVM restores depth, pan, zoom, and
+which proposal was showing (`.uml-viewer/session.edn`). Do not SIGKILL.
+Closing the window still kills Grok.
 
 On a fresh start the canvas stays blank until the companion sends `:display`,
 with **Waiting for agent to create diagram.** `R` reloads the current EDN
@@ -216,7 +219,9 @@ Rename or move of a function is a new form: overlay does not match old names.
 
 - First view: **namespace components** (layers). Dependencies between them
   collapse to one arrow. Each component lists nested namespaces.
-- Double-click a component to open the next level. Esc or the ← label goes up.
+- Double-click a component to open the next level. Esc or the ← label goes
+  up a level, including after drilling a proposal group. Esc does not quit.
+  The window close box or a `:quit-for-restart` mail message exits the app.
 - Hover an arrow for a popup of every `from -> to` it bundles, in any
   declutter mode. Violating pairs are red.
 - Right-click a class or component for **Refresh CRAP**, **Refresh
@@ -234,8 +239,9 @@ Rename or move of a function is a new form: overlay does not match old names.
   **Declutter** cycles Declutter arrows / Remove arrows / Declutter
   elements / Declutter classes / Declutter none. **Remove arrows** hides
   the lines and puts a triangle on the top (incoming) and bottom
-  (outgoing) of each box. A triangle is red if any bundled pair is
-  violating. Hover it for the `from -> to` list.
+  (outgoing) of each box, **including nested classes** as well as their
+  packages. A triangle is red if any bundled pair is violating. Hover it
+  for the `from -> to` list.
 - Double-click a leaf module for its **class card**.
 - The class card names the **module** (`:ns`). Click it to open that source
   file at the top. Hover a member to highlight it; click it to open the same
@@ -255,7 +261,8 @@ Rename or move of a function is a new form: overlay does not match old names.
   (see [Companion mailbox](#companion-mailbox)).
 - `R` reloads the current EDN (the watcher also reloads on save). Overlay
   re-reads `.metrics/` on the next load.
-- `Esc` on the class card closes it. Closing the main window exits the app.
+- `Esc` on the class card closes it (it does not quit the viewer). Closing
+  the main window exits the app.
 
 ## Policy
 
@@ -398,17 +405,20 @@ The inspector lists the real diagram (the namespace tree) just above
 (canvas marked **PROPOSAL — not instantiated in code**). Either click
 tells the companion that diagram is the context of discussion. **New
 Proposal** adds an empty proposal named with a timestamp. Right-click a
-name to rename or delete it. Double-click a ns box to drill the real tree.
+name to rename or delete it. Double-click a ns box to drill; **←** at the
+top returns to the proposal.
 
 The **Declutter** button cycles **Declutter arrows** (one arrow per
 component pair per direction) → **Remove arrows** (triangles on each box
-instead of lines; hover lists deps; red if any pair is violating) →
+and on nested classes instead of lines; hover lists deps; red if any pair
+is violating) →
 **Declutter elements** (also hide nested names, members, and ports) →
 **Declutter classes** (also hide classes inside components) →
 **Declutter none**.
 
 When a proposal is shown, rank follows **that** proposal's component order
 and violating arrows are re-evaluated. The real diagram uses `:levels`.
+A component inherits the **max** level of its elements.
 Class boxes show the current view's rank (innermost **0**)
 at the upper left; the class card repeats **Level n**. Level 0 is drawn at
 the **bottom**. Good arrows (outer → inner) point down; violating arrows
@@ -421,7 +431,11 @@ and C/M dots; double-click still opens a component.
              :name "2026-09-18 10:30:00"
              :layers [{:id :playfield :label "Playfield"
                        :nses [entities world missiles cities batteries flyers]}
-                      {:id :hosts :label "Hosts" :nses [jvm browser]}]
+                      {:id :hosts :label "Hosts" :nses [jvm browser]}
+                      {:id :jvm :label "JVM"
+                       :nses [jvm.cli jvm.main
+                              {:id :quil-swing :label "Quil/Swing"
+                               :nses [jvm.sketch jvm.window]}]}]
              :omit [cli]}]
 ```
 
@@ -441,7 +455,14 @@ project (gitignored). The file is the mail; tmux is only a doorbell.
 | `.uml-viewer/to-viewer.edn` | Grok → viewer |
 | `.uml-viewer/to-agent.edn` | viewer → Grok |
 
-Commands are `{:id n :op …}` with a rising `:id`. Writes are tmp-then-rename.
+Each mailbox file is a small queue `{:next-id n :queue [cmd …]}` (tmp-then-rename).
+Commands have a rising `:id`. Append; do not overwrite. Handling a command
+**pops** it from `:queue` and rewrites the file (oldest first). The viewer
+does this itself on `to-viewer.edn`. The companion must pop each
+`to-agent.edn` command as it handles it.
+
+`.uml-viewer/session.edn` is the last view (depth, pan, zoom, proposal) written
+on `:quit-for-restart` and restored by `--restart`.
 
 | `:op` | Meaning |
 |-------|---------|
@@ -547,7 +568,8 @@ the worst function in the namespace, not a sum). Column groups are labeled
 `--crap--` (Crap, CC, Cov) and `--mutation--` (killed, survived, uncovered).
 The class row shows average CRAP with a `μ` suffix and omits CC. Killed is
 white. Survived and uncovered are green at 0 and red when nonzero. A row
-with no mutation sites shows `---no mutation sites---` instead of zeros.
+with no mutation operators (`:sites` 0) shows `---no mutation sites---`.
+A form with operators still shows killed/survived/uncovered, including zeros.
 
 Edge `:kind` values:
 

@@ -40,7 +40,8 @@
         (catch Exception _ {:status "stale"})))))
 
 (def metric-keys
-  [:crap :cc :coverage :killed :survived :uncovered :mutation-status :mutation-counts])
+  [:crap :cc :coverage :killed :survived :uncovered :sites
+   :mutation-status :mutation-counts])
 
 (defn clear-class [component]
   (let [clear (fn [member] (apply dissoc member metric-keys))]

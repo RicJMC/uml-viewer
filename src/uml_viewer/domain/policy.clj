@@ -62,10 +62,29 @@
 (def proposal-notice
   "PROPOSAL — not instantiated in code")
 
+(defn- nse-entry
+  "A layer :nses item: a namespace id, or a nested group map."
+  [x]
+  (if (map? x)
+    (let [id (as-id (or (:id x) (:label x)))
+          label (or (:label x) (name id))]
+      {:id id :label label :nses (mapv nse-entry (or (:nses x) []))})
+    (as-id x)))
+
+(defn nse-ids
+  "Leaf namespace ids from a layer :nses vector, flattening nested groups."
+  [nses]
+  (into []
+        (mapcat (fn [x]
+                  (if (map? x)
+                    (nse-ids (or (:nses x) []))
+                    [(as-id x)]))
+                nses)))
+
 (defn- layer-from
   [i layer]
   (when (map? layer)
-    (let [nses (mapv as-id (or (:nses layer) []))
+    (let [nses (mapv nse-entry (or (:nses layer) []))
           id (as-id (or (:id layer) (:label layer) (str "layer-" i)))
           label (or (:label layer) (name id))]
       {:id id :label label :nses nses})))
@@ -151,7 +170,7 @@
   [policy]
   (if (seq (:levels policy))
     (mapv group-nses (:levels policy))
-    (mapv :nses (proposal-layers policy))))
+    (mapv #(nse-ids (:nses %)) (proposal-layers policy))))
 
 (defn level-ranks
   "Top-level segment -> rank. Smaller is higher-level (inner)."
@@ -166,16 +185,27 @@
   "Inner-first proposal layers -> rank map. Same contract as `level-ranks`."
   [layers]
   (level-ranks {:levels (mapv (fn [layer]
-                                (if (map? layer) (or (:nses layer) []) layer))
+                                (if (map? layer)
+                                  (nse-ids (or (:nses layer) []))
+                                  layer))
                               (or layers []))}))
 
 (defn- top-seg [id]
   (keyword (first (str/split (name id) #"\."))))
 
+(defn rank-of
+  "Rank for `id`: exact key in `ranks`, else longest dotted prefix."
+  [id ranks]
+  (let [id (as-id id)
+        parts (str/split (name id) #"\.")]
+    (some (fn [n]
+            (get ranks (keyword (str/join "." (take n parts)))))
+          (range (count parts) 0 -1))))
+
 (defn- with-levels [classes ranks]
   (mapv (fn [c]
           (if-let [lv (and (not (:foreign c))
-                           (get ranks (top-seg (:id c))))]
+                           (rank-of (:id c) ranks))]
             (assoc c :level lv)
             c))
         classes))
@@ -185,8 +215,8 @@
   lower-level (outer) one. Both ends must have a rank. Same rank is allowed."
   [e ranks]
   (and (= :dependency (:kind e))
-       (let [rf (get ranks (top-seg (:from e)))
-             rt (get ranks (top-seg (:to e)))]
+       (let [rf (rank-of (:from e) ranks)
+             rt (rank-of (:to e) ranks)]
          (boolean (and rf rt (< rf rt))))))
 
 (defn mark-violations

@@ -8,6 +8,7 @@
 (def dir-name ".uml-viewer")
 (def to-viewer-name "to-viewer.edn")
 (def to-agent-name "to-agent.edn")
+(def session-name "session.edn")
 
 (defn dir [root]
   (io/file root dir-name))
@@ -18,12 +19,33 @@
 (defn to-agent [root]
   (io/file (dir root) to-agent-name))
 
+(defn session-file [root]
+  (io/file (dir root) session-name))
+
 (defn read-command
   [file]
   (when (and file (.isFile (io/file file)))
     (try
       (edn/read-string (slurp file))
       (catch Exception _ nil))))
+
+(def ^:private keep-n 32)
+
+(defn read-mailbox
+  "Envelope `{:next-id n :queue [cmd …]}`. A legacy single command becomes a queue."
+  [file]
+  (let [raw (read-command file)]
+    (cond
+      (nil? raw) {:next-id 1 :queue []}
+      (vector? (:queue raw)) {:next-id (long (or (:next-id raw) 1))
+                              :queue (vec (:queue raw))}
+      (:op raw) {:next-id (inc (long (or (:id raw) 0)))
+                 :queue [raw]}
+      :else {:next-id 1 :queue []})))
+
+(defn last-id
+  [file]
+  (long (or (:id (last (:queue (read-mailbox file)))) 0)))
 
 (defn- atomic-write!
   [file m]
@@ -44,18 +66,47 @@
                                 [StandardCopyOption/REPLACE_EXISTING]))))))
 
 (defn write-command!
-  "Write `op` (and extra keys) with an id greater than any previous command."
+  "Append `op` (and extra keys) onto the mailbox queue."
   [file op extra]
-  (let [prev (read-command file)
-        id (inc (long (or (:id prev) 0)))
-        cmd (merge {:id id :op (keyword op)} extra)]
-    (atomic-write! file cmd)
+  (let [box (read-mailbox file)
+        id (long (or (:next-id box) 1))
+        cmd (merge {:id id :op (keyword op)} extra)
+        kept (vec (filter #(> (long (:id %)) (- id keep-n)) (:queue box)))]
+    (atomic-write! file {:next-id (inc id)
+                         :queue (conj kept cmd)})
     cmd))
 
-(defn unread
-  "Return cmd when its :id is newer than `seen-id`."
+(defn pending
+  "Queued commands with :id greater than `seen-id`, oldest first."
   [file seen-id]
-  (let [cmd (read-command file)
-        id (:id cmd)]
-    (when (and (number? id) (> (long id) (long (or seen-id 0))))
-      cmd)))
+  (vec (filter #(> (long (:id %)) (long (or seen-id 0)))
+               (:queue (read-mailbox file)))))
+
+(defn unread
+  "Next queued command after `seen-id`, or nil. Does not remove it."
+  [file seen-id]
+  (first (pending file seen-id)))
+
+(defn take-command!
+  "Remove and return the oldest command newer than `seen-id`, or nil.
+  Stale items at or below `seen-id` are dropped from the file."
+  ([file] (take-command! file 0))
+  ([file seen-id]
+   (let [box (read-mailbox file)
+         seen (long (or seen-id 0))
+         q (vec (filter #(> (long (:id %)) seen) (:queue box)))]
+     (when (seq q)
+       (atomic-write! file {:next-id (long (or (:next-id box) 1))
+                            :queue (vec (rest q))})
+       (first q)))))
+
+(defn write-session!
+  "Persist viewer scene keys for --restart."
+  [root m]
+  (atomic-write! (session-file root) (or m {}))
+  m)
+
+(defn read-session
+  [root]
+  (let [raw (read-command (session-file root))]
+    (when (map? raw) raw)))

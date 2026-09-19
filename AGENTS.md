@@ -19,6 +19,9 @@ requests use the measurement CLI, not Clojure aliases. It measures a source
 package, so explain that scope before a broader campaign. For `:omit`, edit
 the policy or selected proposal and regenerate. Standalone mode queues mail
 without starting or waking a companion.
+The mailbox is a queue envelope. Handle `:queue` oldest first, remove handled
+commands, and preserve `:next-id` and pending entries. Append replies to the
+viewer queue instead of replacing its contents.
 
 Do not edit generated diagram files. Edit the policy, then regenerate.
 Keep generated output in ignored `target/`. Do not commit local paths, examined
