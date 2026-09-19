@@ -208,7 +208,9 @@
   "One diagram: children of `path` as boxes, edges collapsed to that level."
   [doc path]
   (let [path (mapv as-id path)
-        classes (:classes doc)
+        omit-ids (or (:omit doc) [])
+        classes (vec (remove #(policy/omitted-id? (:id %) omit-ids)
+                             (:classes doc)))
         idx (index-classes classes)
         order (or (get-in doc [:order (str/join "." (map name path))])
                   (when (empty? path) (:order doc))
@@ -256,7 +258,7 @@
   (policy/named-proposals doc))
 
 (def declutter-modes
-  [:full :arrows :elements :classes])
+  [:full :arrows :triangles :elements :classes])
 
 (defn next-declutter
   [mode]
@@ -389,7 +391,8 @@
   [view mode]
   (let [mode ({:methods :elements} (or mode :full) (or mode :full))]
     (cond-> view
-      (#{:arrows :elements :classes} mode) collapse-arrows
+      (#{:arrows :triangles :elements :classes} mode) collapse-arrows
+      (= :triangles mode) (assoc :hide-edges true)
       (#{:elements :classes} mode) hide-elements
       (= :classes mode) hide-classes)))
 

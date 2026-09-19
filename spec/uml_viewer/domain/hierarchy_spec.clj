@@ -51,6 +51,13 @@
       (should= "Unassigned" (:label last-pkg))
       (should (some #{:ir} (map :id (:classes last-pkg))))))
 
+  (it "hides policy-omitted nses from the namespace tree"
+    (let [doc (assoc (policy/apply-policy policy graph) :omit [:layout])
+          view (hierarchy/view-at doc [])
+          ids (map :id (mapcat :classes (:packages view)))]
+      (should-not (some #{:layout} ids))
+      (should (some #{:ir} ids))))
+
   (it "omits listed nses from Unassigned"
     (let [p (assoc policy
               :proposals [{:id :engine :name "Engine"
@@ -80,6 +87,12 @@
       (should (contains? (:via-ids e) :source))
       (should (some #(and (= :ir (:from %)) (= :layout (:to %))) (:deps e)))
       (should (some #(and (= :source (:from %)) (= :layout (:to %))) (:deps e))))))
+
+  (it "hides arrows in remove-arrows declutter"
+    (let [doc (policy/apply-policy policy graph)
+          view (hierarchy/apply-declutter (hierarchy/view-at doc []) :triangles)]
+      (should (:hide-edges view))
+      (should (seq (:edges view)))))
 
   (it "hides nested names, members, and ports then classes as declutter progresses"
     (let [doc (policy/apply-policy policy graph)

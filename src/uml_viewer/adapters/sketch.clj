@@ -8,6 +8,7 @@
             [uml-viewer.application.document :as document]
             [uml-viewer.adapters.draw :as draw]
             [uml-viewer.application.events :as events]
+            [uml-viewer.engine.hit :as hit]
             [uml-viewer.engine.layout :as layout]
             [uml-viewer.domain.mailbox :as mailbox]
             [uml-viewer.application.overlay :as overlay]
@@ -49,8 +50,21 @@
        "4. Regenerate the IR so the EDN mtime updates.\n"
        "Mailbox: the viewer writes .uml-viewer/to-agent.edn; you write\n"
        ".uml-viewer/to-viewer.edn (atomic: tmp then rename). Ops are\n"
-       "{:id n :op :display :path \"...\"}, {:id n :op :regen}, and\n"
-       "{:id n :op :quit-for-restart}.\n"
+       "{:id n :op :display :path \"...\"}, {:id n :op :regen},\n"
+       "{:id n :op :quit-for-restart}, {:id n :op :context ...},\n"
+       "and right-click element ops:\n"
+       "{:id n :op :refresh-crap :target {...}}, :refresh-mutate,\n"
+       ":refresh-mutate-all, :omit. :target is {:id :ns :kind :class|:component\n"
+       " :proposal-id?}. For :refresh-crap run clj -M:crap (that class or the\n"
+       " files under that component) then IR. For :refresh-mutate run\n"
+       " clj -M:mutate on those src files (differential). For\n"
+       " :refresh-mutate-all pass --mutate-all on those files. For :omit, if\n"
+       " :proposal-id is set add :id to that proposal's :omit; otherwise add it\n"
+       " to policy :omit. Then regenerate the IR.\n"
+       ":context means the inspector selection is the discussion context:\n"
+       "{:context :real} for the namespace tree, or {:context :proposal\n"
+       " :proposal-id id :name \"...\"} for a named proposal. Treat that as\n"
+       "the architecture under discussion until a later :context arrives.\n"
        "A tmux wake-up means mail is waiting. If idle, read to-agent.edn\n"
        "and do that command. If busy, finish first. Do not send tmux yourself.\n"
        "After regen, write :display with the generated EDN path.\n"
@@ -140,11 +154,29 @@
           (apply tmux! step)))
       true)))
 
+(defn request-agent!
+  "Queue `op`; standalone mode leaves delivery to the local agent."
+  [root op extra]
+  (let [cmd (mailbox/write-command! (mailbox/to-agent root) op extra)]
+    {:cmd cmd :woke? (and (not (:standalone? @!bridge)) (notify-agent!))}))
+
 (defn request-regen!
   "Queue a :regen command and wake Grok. Returns {:cmd :woke?}."
   [root]
-  (let [cmd (mailbox/write-command! (mailbox/to-agent root) :regen {})]
-    {:cmd cmd :woke? (notify-agent!)}))
+  (request-agent! root :regen {}))
+
+(defn mail-context!
+  "Tell the companion which diagram is under discussion."
+  [state]
+  (when-let [path (:path state)]
+    (let [root (overlay/metrics-root path)]
+      (if-let [id (:proposal-id state)]
+        (request-agent! root :context
+                        {:context :proposal
+                         :proposal-id id
+                         :name (:name (policy/proposal-by-id (:doc state) id))})
+        (request-agent! root :context {:context :real}))))
+  state)
 
 (def terminal-title "Grok")
 
@@ -530,6 +562,38 @@
       :else
       {:invoker invoker :x (int x) :y (int y)})))
 
+(defn- element-target [state sel]
+  (let [id (:id sel)
+        c (when id (hit/class-by-id (:scene state) id))
+        component? (boolean
+                     (or (events/layer-id sel)
+                         (:dummy? c)
+                         (seq (:contents c))
+                         (= :package (:kind sel))))]
+    (cond-> {:id id :kind (if component? :component :class)}
+      (:ns c) (assoc :ns (:ns c))
+      (:proposal-id state) (assoc :proposal-id (:proposal-id state)))))
+
+(defn- popup-element-menu! [event x y state sel]
+  (let [anchor (popup-anchor event x y)
+        root (overlay/metrics-root (:path state))
+        target (element-target state sel)]
+    (later!
+      (fn []
+        (let [menu (JPopupMenu.)
+              add (fn [label op]
+                    (let [item (JMenuItem. label)]
+                      (.addActionListener item
+                        (reify ActionListener
+                          (actionPerformed [_ _]
+                            (request-agent! root op {:target target}))))
+                      (.add menu item)))]
+          (add "Refresh CRAP" :refresh-crap)
+          (add "Refresh Mutation" :refresh-mutate)
+          (add "Refresh All Mutation" :refresh-mutate-all)
+          (add "Omit" :omit)
+          (.show menu (:invoker anchor) (int (:x anchor)) (int (:y anchor))))))))
+
 (defn- popup-proposal-menu! [event x y id pname]
   (let [anchor (popup-anchor event x y)]
     (later!
@@ -579,7 +643,10 @@
                 event x y (:id hit)
                 (:name (policy/proposal-by-id (:doc state) (:id hit))))
               state)
-          hit (events/on-inspector-press state hit)
+          hit (let [next (events/on-inspector-press state hit)]
+                (when (#{:real-diagram :proposal :new-proposal} (:kind hit))
+                  (mail-context! next))
+                next)
           :else state))
 
       :else
@@ -587,6 +654,13 @@
             sel (:selected state)
             n (click-count event)]
         (cond
+          (and (right-click? event)
+               (or (= :class (:kind sel))
+                   (= :child (:kind sel))
+                   (events/layer-id sel)))
+          (do (popup-element-menu! event x y state sel)
+              state)
+
           (and (>= n 2) (events/layer-id sel))
           (events/drill state (events/layer-id sel))
 

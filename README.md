@@ -1,11 +1,42 @@
 # UML viewer
+## Abstract
+
+This project displays a project as UML. The UML is *dynamic*. You can click
+elements to drill down — all the way to source code. You can also play
+what-if games by proposing architecture changes.
+
+The app is coupled to an agent assistant. The two communicate, so you can
+display the UML, drill down, tell the agent what you don't like, and watch
+it make the changes. Describe a proposal and the agent will build a new
+diagram. Keep revising that proposal until you like it, then tell the
+agent to make the code match.
+
+Color coding comes from CRAP and mutation metrics. You can adjust the
+thresholds in config if you like.
+
+The viewer and agent treat namespaces as components. Modules inside those
+namespaces are the components' elements. Nesting can be arbitrarily deep.
+You build an architecture by moving modules into the right namespaces with
+the right dependencies.
+
+You choose architectural levels by telling the agent what coupling and
+cohesion criteria to use. For example, I tell my agent to group modules
+into components by the Common Closure Principle.
+
+Dependencies that point from higher to lower level components are colored red in conformance to the Dependency Rule of Clean Architecture.
+
+The bottom line: you can view the structure of your code, see how well
+tests cover it, play what-if games, and manipulate the system from a high
+level.
+
+## Tech
 
 A live Quil app that lays out and draws UML from an EDN IR. A **policy** plus
 a language-specific parser write the topology; this tool displays it, routes
 the arrows, colors CRAP, and lets you click.
 
 The IR is **topology**: the namespace tree, classes, and edges. **Metrics**
-(CC, coverage, CRAP, killed/survived) come from `.metrics/` snapshots produced
+(CC, coverage, CRAP, killed/survived/uncovered) come from `.metrics/` snapshots produced
 by [crap4clj](https://github.com/unclebob/crap4clj) and
 [clj-mutate](https://github.com/unclebob/clj-mutate). The viewer overlays those
 files at load, keyed by namespace + function name. Agents edit the policy, not
@@ -51,6 +82,15 @@ uml-python refresh --policy examples/python.policy.edn
 same Clojure generator as the native Regen button. Set `UML_CLOJURE` to select
 a Clojure executable. No command calls an external AI service. Repository
 instructions for agents are in [AGENTS.md](AGENTS.md).
+
+Right-click actions and diagram selections also write the upstream mailbox,
+`.uml-viewer/to-agent.edn`. In standalone mode they do not wake Grok or launch
+an agent. Ask your local agent to read this file and handle the request.
+For Python quality requests, use the measurement command below, not the
+Clojure quality aliases. It measures the configured source package; it does
+not currently limit a campaign to the clicked class. `:omit` changes the
+policy or proposal, then regenerates the diagram. `:context` selects the
+diagram being discussed. Regen itself runs locally in standalone mode.
 
 ### Python quality measurements
 
@@ -179,11 +219,23 @@ Rename or move of a function is a new form: overlay does not match old names.
 - Double-click a component to open the next level. Esc or the ← label goes up.
 - Hover an arrow for a popup of every `from -> to` it bundles, in any
   declutter mode. Violating pairs are red.
-- The inspector lists **proposals**. Click one to show it (marked as not
-  in the code). **P** returns to the ns tree. **New Proposal** adds a
-  timestamp-named proposal. Right-click to rename or delete. **Declutter**
-  cycles Declutter arrows / Declutter elements / Declutter classes /
-  Declutter none.
+- Right-click a class or component for **Refresh CRAP**, **Refresh
+  Mutation**, **Refresh All Mutation**, or **Omit**. Each writes
+  `to-agent.edn` and wakes the companion. CRAP runs on that class or the
+  files under that component. Mutation is differential `clj -M:mutate` on
+  those src files; All Mutation passes `--mutate-all`. Omit adds the id to
+  the current proposal's `:omit`, or to policy `:omit` on the real diagram.
+- Component titles paint **on top of** crossing arrows.
+- The inspector lists the **real diagram** (the namespace tree) above
+  **Proposals**. Click the real row to return to the tree; click a proposal
+  to show it (marked as not in the code). Either click writes `:context`
+  so the companion treats that diagram as the discussion. **New Proposal**
+  adds a timestamp-named proposal. Right-click to rename or delete.
+  **Declutter** cycles Declutter arrows / Remove arrows / Declutter
+  elements / Declutter classes / Declutter none. **Remove arrows** hides
+  the lines and puts a triangle on the top (incoming) and bottom
+  (outgoing) of each box. A triangle is red if any bundled pair is
+  violating. Hover it for the `from -> to` list.
 - Double-click a leaf module for its **class card**.
 - The class card names the **module** (`:ns`). Click it to open that source
   file at the top. Hover a member to highlight it; click it to open the same
@@ -225,7 +277,7 @@ level. `uml-viewer.engine.layout` is a child of `engine`.
 `uml-viewer.clojure-language.source-clojure` is a child of `clojure-language`.
 The policy does **not** assign nses to invented packages. If you want Domain /
 Engine / Adapters boxes **in the source tree**, those segments must exist as
-namespaces. To **view** a grouping that is not in the code, use `:proposal`
+namespaces. To **view** a grouping that is not in the code, use `:proposals`
 (see [Proposed components](#proposed-components)) — do not rewrite namespaces.
 
 To write a policy for a project:
@@ -241,7 +293,7 @@ To write a policy for a project:
    `clojure-language`).
 6. Set `:levels` so the generator can mark dependency-rule violations
    (see [Dependency rule](#dependency-rule)).
-7. Optionally set `:proposal` to name design components that are not namespaces
+7. Optionally set `:proposals` to name design components that are not namespaces
    (see [Proposed components](#proposed-components)).
 8. Run `clj -M:ir` (or Regen).
 
@@ -281,7 +333,8 @@ Right (the ns tree):
 | `:hierarchical` | Namespace tree (default when `:packages` is omitted) |
 | `:order` | Order of **existing** top-level ns segments, not new component names |
 | `:levels` | Groups of those segments, **inner (higher-level) first**. Same group = same rank |
-| `:proposals` | Named groupings of real segments; **not** instantiated in source. Inspector list; **P** returns to the ns tree |
+| `:proposals` | Named groupings of real segments; **not** instantiated in source. Inspector **Real diagram** row returns to the ns tree |
+| `:omit` | On a proposal or the policy: nses (and their children) left off the diagram |
 | `:edge-kinds` | Override parser kind for `[from to]` (usually `:association`) |
 | `:omit-edges` | Drop `[from to]` |
 | `:lang` | Which `LanguageGraph` to use (default `:clojure`) |
@@ -337,18 +390,22 @@ and `:proposals` is set, rank follows the first proposal's component order.
 ### Proposed components
 
 `:proposals` is a list of named groupings of **existing** top-level segments.
-Those names are not namespaces. Each item is `{:id :name :layers [...]}`
-(`:layers` here are named components). The as-is diagram stays the ns tree.
+Those names are not namespaces. Each item is `{:id :name :layers [...] :omit [...]}`
+(`:layers` here are named components; `:omit` keeps listed nses off
+**Unassigned**). The as-is diagram stays the ns tree.
 The inspector lists the real diagram (the namespace tree) just above
 **Proposals**; click it to return to the tree. Click a proposal to show it
-(canvas marked **PROPOSAL — not instantiated in code**). **New Proposal**
-adds an empty proposal named with a timestamp. Right-click a name to rename
-or delete it. Double-click a ns box to drill the real tree.
+(canvas marked **PROPOSAL — not instantiated in code**). Either click
+tells the companion that diagram is the context of discussion. **New
+Proposal** adds an empty proposal named with a timestamp. Right-click a
+name to rename or delete it. Double-click a ns box to drill the real tree.
 
 The **Declutter** button cycles **Declutter arrows** (one arrow per
-component pair per direction) → **Declutter elements** (also hide nested
-names, members, and ports) → **Declutter classes** (also hide classes
-inside components) → **Declutter none**.
+component pair per direction) → **Remove arrows** (triangles on each box
+instead of lines; hover lists deps; red if any pair is violating) →
+**Declutter elements** (also hide nested names, members, and ports) →
+**Declutter classes** (also hide classes inside components) →
+**Declutter none**.
 
 When a proposal is shown, rank follows **that** proposal's component order
 and violating arrows are re-evaluated. The real diagram uses `:levels`.
@@ -364,7 +421,8 @@ and C/M dots; double-click still opens a component.
              :name "2026-09-18 10:30:00"
              :layers [{:id :playfield :label "Playfield"
                        :nses [entities world missiles cities batteries flyers]}
-                      {:id :hosts :label "Hosts" :nses [jvm browser]}]}]
+                      {:id :hosts :label "Hosts" :nses [jvm browser]}]
+             :omit [cli]}]
 ```
 
 Companion Grok must not invent `:proposals` on launch and must keep them when
@@ -390,6 +448,19 @@ Commands are `{:id n :op …}` with a rising `:id`. Writes are tmp-then-rename.
 | `:display` | Viewer loads `:path` (relative to the project root) |
 | `:regen` | Grok rewrites hierarchical policy, regenerates IR, then `:display` |
 | `:quit-for-restart` | Viewer exits the JVM without killing Grok. The associated agent then runs `clj -M:uml-viewer-restart`. |
+| `:refresh-crap` | Run CRAP on `:target` (class or component), then IR |
+| `:refresh-mutate` | Differential mutate `:target`'s src files, then IR |
+| `:refresh-mutate-all` | `clj -M:mutate --mutate-all` on `:target`'s src files, then IR |
+| `:omit` | Add `:target` `:id` to proposal or policy `:omit`, then IR |
+| `:context` | Inspector selection is the discussion context: `{:context :real}` or `{:context :proposal :proposal-id id :name "…"}` |
+
+Clicking **Real diagram** or a proposal (including **New Proposal**) writes
+`:context` and wakes Grok. Stay on that architecture until the next
+`:context`.
+
+Right-click ops include `:target {:id :ns :kind :class|:component :proposal-id?}`.
+`:kind` is `:component` for a layer box (and its nested nses) and `:class`
+for a module.
 
 **Regen** in the inspector queues `:regen` and wakes Grok with literal text, a
 150ms pause, `C-m`, 50ms, then `C-j` (same timing as SwarmForge). The wake-up
@@ -497,8 +568,9 @@ Layout follows Mermaid's three stages:
 3. **Route** like Mermaid/ELK: ports on facing sides, orthogonal tracks in
    the rank gap, short same-rank connections through the stack gap (local U
    only when a sibling sits in the way), then stroke with D3 `curveBasis`
-   cubics. All arrows are solid grey. Paths that pass the target and reverse
-   are rejected.
+   cubics. Ordinary arrows are solid grey; violating dependencies are red
+   (bold red when selected). Component titles draw after the arrows so
+   names stay visible. Paths that pass the target and reverse are rejected.
 
 ## Source extractors
 

@@ -39,6 +39,12 @@
     (should (geom/near-polyline? [5 1] [[0 0] [10 0]] 2))
     (should-not (geom/near-polyline? [5 10] [[0 0] [10 0]] 2)))
 
+  (it "hits inside a triangle and near its edge"
+    (let [t [[0 0] [10 0] [5 8]]]
+      (should (geom/point-in-triangle? [5 2] t))
+      (should (geom/near-triangle? [5 -1] t 2))
+      (should-not (geom/near-triangle? [20 20] t 2))))
+
   (it "opens a pad-sized gap where a line passes through a class"
     (let [r (geom/rect 40 0 20 20)
           paths (geom/gap-polyline [[0 10] [100 10]] [r] 5)

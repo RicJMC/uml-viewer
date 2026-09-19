@@ -13,6 +13,13 @@ After a change, run the affected Python tests and `clojure -M:spec` for shared
 viewer changes. Install optional quality dependencies for measurement tests.
 Preserve the existing Clojure workflow and current upstream features.
 
+In standalone mode, read `.uml-viewer/to-agent.edn` when asked to handle a
+viewer action. Honor `:context` and the requested target. For Python quality
+requests use the measurement CLI, not Clojure aliases. It measures a source
+package, so explain that scope before a broader campaign. For `:omit`, edit
+the policy or selected proposal and regenerate. Standalone mode queues mail
+without starting or waking a companion.
+
 Do not edit generated diagram files. Edit the policy, then regenerate.
 Keep generated output in ignored `target/`. Do not commit local paths, examined
 projects, private reports, credentials, runtime dependencies, or screenshots.

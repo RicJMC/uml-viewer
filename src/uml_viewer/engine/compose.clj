@@ -1,6 +1,7 @@
 (ns uml-viewer.engine.compose
   (:require [uml-viewer.engine.curve :as curve]
             [uml-viewer.domain.geom :as geom]
+            [uml-viewer.engine.hit :as hit]
             [uml-viewer.engine.layout :as layout]
             [uml-viewer.engine.route :as route]))
 
@@ -125,7 +126,10 @@
       :edges (mapv #(prepare-edge cs %) (:edges scene)))))
 
 (defn compile-diagram [diagram]
-  (prepare-scene (fit-scene (route/route (layout/layout diagram)))))
+  (let [scene (prepare-scene (fit-scene (route/route (layout/layout diagram))))]
+    (if (:hide-edges diagram)
+      (assoc scene :dep-indicators (hit/dep-indicators scene))
+      scene)))
 
 (defn compile-document
   "Layout and route each diagram, then stack them top to bottom."

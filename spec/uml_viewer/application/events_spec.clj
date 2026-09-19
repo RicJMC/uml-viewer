@@ -140,10 +140,11 @@
       (should= :proposal.kernel (:open-layer opened))
       (should-be-nil (:open-layer back))))
 
-  (it "cycles declutter none → arrows → elements → classes → none"
+  (it "cycles declutter none → arrows → remove arrows → elements → classes → none"
     (let [s {:declutter :full}]
       (should= :arrows (:declutter (events/cycle-declutter s)))
-      (should= :elements (:declutter (events/cycle-declutter {:declutter :arrows})))
+      (should= :triangles (:declutter (events/cycle-declutter {:declutter :arrows})))
+      (should= :elements (:declutter (events/cycle-declutter {:declutter :triangles})))
       (should= :classes (:declutter (events/cycle-declutter {:declutter :elements})))
       (should= :full (:declutter (events/cycle-declutter {:declutter :classes})))))
 

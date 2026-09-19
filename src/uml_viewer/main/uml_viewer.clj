@@ -26,6 +26,7 @@
                    (try
                      (edn/read-string (slurp (:path options)))
                      (catch Exception _ nil)))]
+    (swap! sketch/!bridge assoc :standalone? (boolean (:standalone? options)))
     (when (:standalone? options)
       (swap! sketch/!bridge assoc :keep-agent true
              :regenerate #(regenerate! (:path options))))

@@ -11,6 +11,9 @@
             [uml-viewer.application.overlay :as overlay]
             [uml-viewer.domain.hierarchy :as hierarchy]
             [uml-viewer.domain.ir :as ir]
+            [uml-viewer.domain.mailbox :as mailbox]
+            [uml-viewer.domain.policy :as policy]
+            [uml-viewer.application.document :as document]
             [uml-viewer.adapters.core :as core]
             [uml-viewer.adapters.sketch :as sketch]
             [uml-viewer.main.uml-viewer :as viewer]
@@ -95,6 +98,27 @@
       (should= 0.1 (:coverage painted)))))
 
 (describe "Standalone Python startup"
+  (it "queues menu actions without waking a companion in standalone mode"
+    (let [root (io/file "target" (str "python-mail-" (System/nanoTime)))
+          previous @sketch/!bridge
+          notifications (atom 0)
+          target {:id :book.Book :ns "library.book.Book" :kind :class}]
+      (try
+        (swap! sketch/!bridge assoc :standalone? true)
+        (with-redefs [sketch/notify-agent! (fn [] (swap! notifications inc) true)]
+          (doseq [operation [:context :refresh-crap :refresh-mutate
+                            :refresh-mutate-all :omit]]
+            (let [result (sketch/request-agent! root operation {:target target})
+                  command (mailbox/read-command (mailbox/to-agent root))]
+              (should= operation (:op command))
+              (should= target (:target command))
+              (should= false (:woke? result)))))
+        (should= 0 @notifications)
+        (finally
+          (reset! sketch/!bridge previous)
+          (doseq [file (reverse (file-seq root))]
+            (io/delete-file file true))))))
+
   (it "selects the source adapter and regenerates without a companion"
     (let [out "target/python-standalone.edn"
           previous @sketch/!bridge
@@ -107,8 +131,25 @@
         (should= :python (:lang (second @started)))
         (should= true (last @started))
         (should= true (:keep-agent @sketch/!bridge))
+        (should= true (:standalone? @sketch/!bridge))
         ((:regenerate @sketch/!bridge))
         (should= :python (:lang (edn/read-string (slurp out))))
         (finally
           (reset! sketch/!bridge previous)
           (io/delete-file out true))))))
+
+(describe "Python diagrams with upstream display controls"
+  (it "keeps Python dependencies visible as triangles and honors policy omissions"
+    (let [graph (graph/scan python-graph/impl "examples/python/library" {:prefix "library"})
+          options (generator/read-policy "examples/python.policy.edn")
+          diagram (policy/apply-policy options graph)
+          scene (document/compile-view diagram "target" [:catalog] {:declutter :triangles})
+          dependencies (mapcat :deps (:dep-indicators scene))
+          omitted (policy/apply-policy (assoc options :omit [:catalog]) graph)
+          remaining (document/compile-view omitted "target" [])]
+      (should (get-in scene [:diagram :hide-edges]))
+      (should (some #(and (= :catalog.MemoryCatalog (:from %))
+                         (= :catalog.Catalog (:to %))) dependencies))
+      (should (some #(= :book (:id %)) (:classes remaining)))
+      (should-not (some #(str/starts-with? (name (:id %)) "catalog")
+                        (:classes remaining))))))

@@ -114,6 +114,11 @@
                             (mapcat :classes (:packages layers))))]
       (should= "uml-viewer.domain.ir" (:ns ir))))
 
+  (it "treats an omitted id as itself and its descendants"
+    (should (policy/omitted-id? :engine [:engine]))
+    (should (policy/omitted-id? :engine.layout [:engine]))
+    (should-not (policy/omitted-id? :layout [:engine])))
+
   (it "normalizes :proposal layers and uses them for ranks when :levels is omitted"
     (let [p {:proposal [{:id :playfield :label "Playfield" :nses [:entities :world]}
                         {:id :hosts :label "Hosts" :nses [:jvm]}]}
