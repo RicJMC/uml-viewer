@@ -51,7 +51,8 @@
        "Mailbox: the viewer writes .uml-viewer/to-agent.edn; you write\n"
        ".uml-viewer/to-viewer.edn (atomic: tmp then rename). Ops are\n"
        "{:id n :op :display :path \"...\"}, {:id n :op :regen},\n"
-       "{:id n :op :quit-for-restart}, and right-click element ops:\n"
+       "{:id n :op :quit-for-restart}, {:id n :op :context ...},\n"
+       "and right-click element ops:\n"
        "{:id n :op :refresh-crap :target {...}}, :refresh-mutate,\n"
        ":refresh-mutate-all, :omit. :target is {:id :ns :kind :class|:component\n"
        " :proposal-id?}. For :refresh-crap run clj -M:crap (that class or the\n"
@@ -60,6 +61,10 @@
        " :refresh-mutate-all pass --mutate-all on those files. For :omit, if\n"
        " :proposal-id is set add :id to that proposal's :omit; otherwise add it\n"
        " to policy :omit. Then regenerate the IR.\n"
+       ":context means the inspector selection is the discussion context:\n"
+       "{:context :real} for the namespace tree, or {:context :proposal\n"
+       " :proposal-id id :name \"...\"} for a named proposal. Treat that as\n"
+       "the architecture under discussion until a later :context arrives.\n"
        "A tmux wake-up means mail is waiting. If idle, read to-agent.edn\n"
        "and do that command. If busy, finish first. Do not send tmux yourself.\n"
        "After regen, write :display with the generated EDN path.\n"
@@ -159,6 +164,19 @@
   "Queue a :regen command and wake Grok. Returns {:cmd :woke?}."
   [root]
   (request-agent! root :regen {}))
+
+(defn mail-context!
+  "Tell the companion which diagram is under discussion."
+  [state]
+  (when-let [path (:path state)]
+    (let [root (overlay/metrics-root path)]
+      (if-let [id (:proposal-id state)]
+        (request-agent! root :context
+                        {:context :proposal
+                         :proposal-id id
+                         :name (:name (policy/proposal-by-id (:doc state) id))})
+        (request-agent! root :context {:context :real}))))
+  state)
 
 (def terminal-title "Grok")
 
@@ -619,7 +637,10 @@
                 event x y (:id hit)
                 (:name (policy/proposal-by-id (:doc state) (:id hit))))
               state)
-          hit (events/on-inspector-press state hit)
+          hit (let [next (events/on-inspector-press state hit)]
+                (when (#{:real-diagram :proposal :new-proposal} (:kind hit))
+                  (mail-context! next))
+                next)
           :else state))
 
       :else

@@ -62,6 +62,7 @@
   {:from :adapters.draw, :to :domain.hierarchy, :kind :dependency}
   {:from :adapters.sketch, :to :engine.layout, :kind :dependency}
   {:from :application.ir-generator, :to :graph, :kind :dependency}
+  {:from :engine.compose, :to :engine.hit, :kind :dependency}
   {:from :application.detail, :to :engine.hit, :kind :dependency}
   {:from :adapters.sketch, :to :adapters.source-window, :kind :dependency}
   {:from :adapters.sketch, :to :domain.mailbox, :kind :dependency}

@@ -53,6 +53,21 @@
       (should= :a (:parent hit))
       (should= :out (:dir hit))))
 
+  (it "builds incoming and outgoing triangles and hits them"
+    (let [a {:id :a :rect {:x 0 :y 0 :w 40 :h 20}}
+          b {:id :b :rect {:x 0 :y 80 :w 40 :h 20}}
+          e {:from :a :to :b :kind :dependency :violating true
+             :deps [{:from :a :to :b :violating true}]}
+          scene {:classes [a b] :edges [e]}
+          inds (hit/dep-indicators scene)
+          out (first (filter #(and (= :a (:id %)) (= :out (:dir %))) inds))
+          in (first (filter #(and (= :b (:id %)) (= :in (:dir %))) inds))
+          [ox oy] (nth (:triangle out) 2)]
+      (should (:violating out))
+      (should (:violating in))
+      (should= :dep (:kind (hit/indicator-at (assoc scene :dep-indicators inds)
+                                            ox oy)))))
+
   (it "hits an arrow and lists its leaf deps"
     (let [e {:from :a :to :b :points [[0 0] [100 0] [200 0]]
              :deps [{:from :a :to :b :violating false}]}

@@ -116,10 +116,14 @@ Rename or move of a function is a new form: overlay does not match old names.
 - Component titles paint **on top of** crossing arrows.
 - The inspector lists the **real diagram** (the namespace tree) above
   **Proposals**. Click the real row to return to the tree; click a proposal
-  to show it (marked as not in the code). **New Proposal** adds a
-  timestamp-named proposal. Right-click to rename or delete. **Declutter**
-  cycles Declutter arrows / Declutter elements / Declutter classes /
-  Declutter none.
+  to show it (marked as not in the code). Either click writes `:context`
+  so the companion treats that diagram as the discussion. **New Proposal**
+  adds a timestamp-named proposal. Right-click to rename or delete.
+  **Declutter** cycles Declutter arrows / Remove arrows / Declutter
+  elements / Declutter classes / Declutter none. **Remove arrows** hides
+  the lines and puts a triangle on the top (incoming) and bottom
+  (outgoing) of each box. A triangle is red if any bundled pair is
+  violating. Hover it for the `from -> to` list.
 - Double-click a leaf module for its **class card**.
 - The class card names the **module** (`:ns`). Click it to open that source
   file at the top. Hover a member to highlight it; click it to open the same
@@ -279,14 +283,17 @@ Those names are not namespaces. Each item is `{:id :name :layers [...] :omit [..
 **Unassigned**). The as-is diagram stays the ns tree.
 The inspector lists the real diagram (the namespace tree) just above
 **Proposals**; click it to return to the tree. Click a proposal to show it
-(canvas marked **PROPOSAL — not instantiated in code**). **New Proposal**
-adds an empty proposal named with a timestamp. Right-click a name to rename
-or delete it. Double-click a ns box to drill the real tree.
+(canvas marked **PROPOSAL — not instantiated in code**). Either click
+tells the companion that diagram is the context of discussion. **New
+Proposal** adds an empty proposal named with a timestamp. Right-click a
+name to rename or delete it. Double-click a ns box to drill the real tree.
 
 The **Declutter** button cycles **Declutter arrows** (one arrow per
-component pair per direction) → **Declutter elements** (also hide nested
-names, members, and ports) → **Declutter classes** (also hide classes
-inside components) → **Declutter none**.
+component pair per direction) → **Remove arrows** (triangles on each box
+instead of lines; hover lists deps; red if any pair is violating) →
+**Declutter elements** (also hide nested names, members, and ports) →
+**Declutter classes** (also hide classes inside components) →
+**Declutter none**.
 
 When a proposal is shown, rank follows **that** proposal's component order
 and violating arrows are re-evaluated. The real diagram uses `:levels`.
@@ -333,6 +340,11 @@ Commands are `{:id n :op …}` with a rising `:id`. Writes are tmp-then-rename.
 | `:refresh-mutate` | Differential mutate `:target`'s src files, then IR |
 | `:refresh-mutate-all` | `clj -M:mutate --mutate-all` on `:target`'s src files, then IR |
 | `:omit` | Add `:target` `:id` to proposal or policy `:omit`, then IR |
+| `:context` | Inspector selection is the discussion context: `{:context :real}` or `{:context :proposal :proposal-id id :name "…"}` |
+
+Clicking **Real diagram** or a proposal (including **New Proposal**) writes
+`:context` and wakes Grok. Stay on that architecture until the next
+`:context`.
 
 Right-click ops include `:target {:id :ns :kind :class|:component :proposal-id?}`.
 `:kind` is `:component` for a layer box (and its nested nses) and `:class`

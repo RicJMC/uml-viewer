@@ -21,6 +21,9 @@ The diagram is already on screen.
   `clj -M:mutate --mutate-all` on those files. `:omit` → add `:id` to
   the current proposal's `:omit`, or to policy `:omit` on the real
   diagram, then IR.
+- `:context` mail: `{:context :real}` or `{:context :proposal :proposal-id
+  id :name "..."}` is the diagram under discussion. Stay on that context
+  until a later `:context` arrives.
 - The examined project must have aliases `:uml-viewer` (fresh start:
   spawn this companion, wait for `:display`) and `:uml-viewer-restart`
   (new JVM, keep this session, load the EDN immediately). Add them if

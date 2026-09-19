@@ -608,6 +608,22 @@
               (should= :s ((:on-close @opts) :s))))))))
 
 (describe "grok session"
+  (it "mails discussion context for the real diagram and a proposal"
+    (let [got (atom nil)]
+      (with-redefs [sketch/request-agent! (fn [_ op extra]
+                                            (reset! got {:op op :extra extra})
+                                            {:cmd extra :woke? true})]
+        (sketch/mail-context! {:path "examples/library.edn" :doc {}})
+        (should= :context (:op @got))
+        (should= :real (get-in @got [:extra :context]))
+        (sketch/mail-context!
+          {:path "examples/library.edn"
+           :proposal-id :ccp
+           :doc {:proposals [{:id :ccp :name "CCP"}]}})
+        (should= :proposal (get-in @got [:extra :context]))
+        (should= :ccp (get-in @got [:extra :proposal-id]))
+        (should= "CCP" (get-in @got [:extra :name])))))
+
   (it "queues element mail and wakes the companion"
     (let [root (str (System/getProperty "java.io.tmpdir")
                     "/uv-mail-" (System/nanoTime))
@@ -639,6 +655,7 @@
       (should (re-find #":refresh-crap" sketch/standing-rules))
       (should (re-find #":refresh-mutate-all" sketch/standing-rules))
       (should (re-find #":omit" sketch/standing-rules))
+      (should (re-find #":context" sketch/standing-rules))
       (should (re-find #":quit-for-restart" sketch/standing-rules))
       (should (re-find #"uml-viewer-restart" sketch/standing-rules))
       (should-not (re-find #":reload" sketch/standing-rules))

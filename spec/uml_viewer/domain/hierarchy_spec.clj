@@ -88,6 +88,12 @@
       (should (some #(and (= :ir (:from %)) (= :layout (:to %))) (:deps e)))
       (should (some #(and (= :source (:from %)) (= :layout (:to %))) (:deps e))))))
 
+  (it "hides arrows in remove-arrows declutter"
+    (let [doc (policy/apply-policy policy graph)
+          view (hierarchy/apply-declutter (hierarchy/view-at doc []) :triangles)]
+      (should (:hide-edges view))
+      (should (seq (:edges view)))))
+
   (it "hides nested names, members, and ports then classes as declutter progresses"
     (let [doc (policy/apply-policy policy graph)
           elements (hierarchy/apply-declutter (hierarchy/view-at doc []) :elements)

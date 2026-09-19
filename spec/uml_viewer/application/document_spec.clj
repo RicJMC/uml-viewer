@@ -66,7 +66,7 @@
                        {:from :domain :to :missing :kind :dependency}]
                :order [:domain :engine]
                :levels [[:domain] [:engine]]}]
-      (doseq [mode [:full :arrows :elements :classes]]
+      (doseq [mode [:full :arrows :triangles :elements :classes]]
         (let [tree (document/compile-view doc "target" [] {:declutter mode})
               prop (document/compile-view doc "target" [] {:declutter mode
                                                           :proposal true})]

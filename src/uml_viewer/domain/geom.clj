@@ -150,6 +150,25 @@
     (some (fn [[a b]] (<= (point-seg-dist p a b) pad))
           (partition 2 1 (vec pts)))))
 
+(defn- tri-sign [[px py] [ax ay] [bx by]]
+  (- (* (- px bx) (- ay by))
+     (* (- ax bx) (- py by))))
+
+(defn point-in-triangle?
+  [p [a b c]]
+  (let [d1 (tri-sign p a b)
+        d2 (tri-sign p b c)
+        d3 (tri-sign p c a)]
+    (not (and (or (neg? d1) (neg? d2) (neg? d3))
+              (or (pos? d1) (pos? d2) (pos? d3))))))
+
+(defn near-triangle?
+  "True if p is inside `pts` or within `pad` of an edge."
+  [p pts pad]
+  (let [pts (vec pts)]
+    (or (point-in-triangle? p pts)
+        (near-polyline? p (conj pts (first pts)) pad))))
+
 (defn- near? [p q]
   (< (Math/hypot (- (first p) (first q))
                  (- (second p) (second q)))

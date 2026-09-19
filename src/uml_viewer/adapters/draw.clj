@@ -357,14 +357,21 @@
 (def ^:private declutter-label
   {:full "Declutter none"
    :arrows "Declutter arrows"
+   :triangles "Remove arrows"
    :elements "Declutter elements"
    :classes "Declutter classes"})
 
 (defn- dep-label [d]
   (str (name (:from d)) " -> " (name (:to d))))
 
+(defn- draw-dep-triangle [ind]
+  (let [[[x1 y1] [x2 y2] [x3 y3]] (:triangle ind)]
+    (q/no-stroke)
+    (rgb (if (:violating ind) violation muted))
+    (q/triangle x1 y1 x2 y2 x3 y3)))
+
 (defn- draw-edge-popup [hover pointer]
-  (when (and (= :edge (:kind hover)) (seq (:deps hover)) (seq pointer))
+  (when (and (#{:edge :dep} (:kind hover)) (seq (:deps hover)) (seq pointer))
     (let [deps (vec (sort-by (juxt (complement :violating)
                                    #(name (:from %))
                                    #(name (:to %)))
@@ -577,16 +584,17 @@
             :when (in-view? (:rect p) cam-x cam-y world-w world-h)]
       (draw-package-body p (and (= :package (get-in state [:selected :kind]))
                                 (= (:id p) (get-in state [:selected :id])))))
-    (doseq [e (:edges scene)
-            :when (let [b (:draw-bounds e)]
-                    (or (nil? b) (in-view? b cam-x cam-y world-w world-h)))]
-      (draw-edge e
-                 (or (= sel-id (:from e)) (= sel-id (:to e))
-                     (contains? (:via-ids e) sel-id)
-                     (and (= :edge (:kind hover))
-                          (= (:from e) (:from hover))
-                          (= (:to e) (:to hover))))
-                 scene))
+    (when-not (get-in scene [:diagram :hide-edges])
+      (doseq [e (:edges scene)
+              :when (let [b (:draw-bounds e)]
+                      (or (nil? b) (in-view? b cam-x cam-y world-w world-h)))]
+        (draw-edge e
+                   (or (= sel-id (:from e)) (= sel-id (:to e))
+                       (contains? (:via-ids e) sel-id)
+                       (and (= :edge (:kind hover))
+                            (= (:from e) (:from hover))
+                            (= (:to e) (:to hover))))
+                   scene)))
     (doseq [sec (:sections scene)]
       (rgb gold)
       (q/text-align :left :top)
@@ -603,7 +611,9 @@
                   (= sel-id (:id c))
                   (= hover-id (:id c))
                   hover
-                  sel)))
+                  sel))
+    (doseq [ind (:dep-indicators scene)]
+      (draw-dep-triangle ind)))
   (q/pop-matrix)
   (draw-sidebar state)
   (when (and (not (:waiting state))

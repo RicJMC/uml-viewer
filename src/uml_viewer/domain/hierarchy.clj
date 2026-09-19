@@ -244,7 +244,7 @@
   (policy/named-proposals doc))
 
 (def declutter-modes
-  [:full :arrows :elements :classes])
+  [:full :arrows :triangles :elements :classes])
 
 (defn next-declutter
   [mode]
@@ -377,7 +377,8 @@
   [view mode]
   (let [mode ({:methods :elements} (or mode :full) (or mode :full))]
     (cond-> view
-      (#{:arrows :elements :classes} mode) collapse-arrows
+      (#{:arrows :triangles :elements :classes} mode) collapse-arrows
+      (= :triangles mode) (assoc :hide-edges true)
       (#{:elements :classes} mode) hide-elements
       (= :classes mode) hide-classes)))
 
