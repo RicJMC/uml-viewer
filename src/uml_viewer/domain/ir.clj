@@ -54,6 +54,8 @@
                (contains? x :killed) (assoc :killed (as-count (:killed x)))
                (contains? x :survived) (assoc :survived (as-count (:survived x)))
                (contains? x :uncovered) (assoc :uncovered (as-count (:uncovered x)))
+               (:metrics-status x) (assoc :metrics-status (:metrics-status x))
+               (:mutation-status x) (assoc :mutation-status (:mutation-status x))
                (contains? x :sites) (assoc :sites (as-count (:sites x)))
                (contains? x :cc) (assoc :cc (as-cc (:cc x)))
                (contains? x :crap) (assoc :crap (as-crap (:crap x)))
@@ -80,6 +82,8 @@
              :fields (mapv as-member (:fields c))
              :ops (mapv as-member (:ops c))}
       (:ns c) (assoc :ns (str (:ns c)))
+      (:metrics-status c) (assoc :metrics-status (:metrics-status c))
+      (:mutation-status c) (assoc :mutation-status (:mutation-status c))
       (some? (:level c)) (assoc :level (long (:level c))))))
 
 (defn- as-package [p]

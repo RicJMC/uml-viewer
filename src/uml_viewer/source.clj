@@ -47,4 +47,4 @@
   ([lang-or-impl ident]
    (if (keyword? lang-or-impl)
      (from-impl (lookup lang-or-impl) ident lang-or-impl)
-     (from-impl lang-or-impl ident (or (:lang ident) :clojure)))))
+     (from-impl lang-or-impl ident (or (:lang ident) (:lang lang-or-impl) :clojure)))))

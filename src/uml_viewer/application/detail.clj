@@ -97,7 +97,8 @@
     (zero? sites)
     (zero? (site-count killed survived uncovered))))
 
-(defn- format-cells [{:keys [crap-mu cc coverage killed survived uncovered sites class-row?]}]
+(defn- format-cells [{:keys [crap-mu cc coverage killed survived uncovered sites
+                           class-row? metrics-status mutation-status]}]
   (let [base {:crap-s (when crap-mu
                         (if class-row?
                           (str (format-num crap-mu) "μ")
@@ -110,9 +111,12 @@
               :survived survived
               :uncovered uncovered
               :sites sites}]
-    (if (no-sites? base)
+    (cond
+      (= "partial" mutation-status) (assoc base :mut-note "partial mutation run")
+      (and metrics-status (nil? killed)) (assoc base :mut-note "not measured")
+      (no-sites? base)
       (assoc base :mut-note "---no mutation sites---")
-      (assoc base
+      :else (assoc base
         :killed-s (when killed (str (long killed)))
         :survived-s (when survived (str (long survived)))
         :uncovered-s (when uncovered (str (long uncovered)))))))
@@ -120,6 +124,8 @@
 (defn- class-metrics [c]
   (let [ops (:ops c)]
     {:class-row? true
+     :metrics-status (:metrics-status c)
+     :mutation-status (:mutation-status c)
      :crap-mu (crap-mu (:crap c))
      :coverage (:coverage c)
      :killed (or (:killed c) (sum-key ops :killed))
@@ -128,7 +134,9 @@
      :sites (or (:sites c) (sum-key ops :sites))}))
 
 (defn- op-metrics [op]
-  {:crap-mu (crap-mu (:crap op))
+  {:metrics-status (:metrics-status op)
+   :mutation-status (:mutation-status op)
+   :crap-mu (crap-mu (:crap op))
    :cc (:cc op)
    :coverage (:coverage op)
    :killed (:killed op)

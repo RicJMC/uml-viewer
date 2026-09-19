@@ -1,5 +1,6 @@
 (ns uml-viewer.application.ir-generator
   (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [clojure.pprint :as pprint]
             [clojure.string :as str]
             [uml-viewer.graph :as graph]
@@ -33,12 +34,14 @@
                            (or (:src policy) "src")
                            {:prefix (or (:prefix policy) "uml-viewer")})
          extra (policy/unassigned policy graph)
-         doc (assoc (policy/apply-policy policy graph)
-               :policy-file policy-path)
+         doc (merge (policy/apply-policy policy graph)
+                    (select-keys graph [:lang :source-root :source-prefix :metrics-mode])
+                    {:policy-file policy-path})
          out (or out-path (:out policy) "examples/uml-viewer.edn")]
      (when (seq extra)
        (binding [*out* *err*]
          (println "Unassigned namespaces:"
                   (str/join ", " (map :ns extra)))))
+     (io/make-parents out)
      (spit out (emit doc))
      out)))
