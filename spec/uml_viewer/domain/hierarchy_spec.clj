@@ -83,6 +83,23 @@
       (should-not (some #{:ir} ids))
       (should (some #{:source} ids))))
 
+  (it "groups nested class ids into a proposal layer"
+    (let [p (assoc policy
+              :proposals [{:id :split :name "split"
+                           :layers [{:id :host :label "JVM host" :nses [:jvm.cli]}
+                                    {:id :ui :label "JVM UI" :nses [:jvm.sketch]}]}]
+              :order [:jvm :ir])
+          g {:classes [{:id :jvm.cli :name "Cli" :ns "demo.jvm.cli"}
+                       {:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}
+                       {:id :ir :name "Ir" :ns "demo.ir"}]
+             :edges [{:from :jvm.sketch :to :jvm.cli :kind :dependency}]}
+          doc (policy/apply-policy p g)
+          view (hierarchy/proposal-view doc :split)
+          host (first (filter #(= :proposal.host (:id %)) (:packages view)))
+          ui (first (filter #(= :proposal.ui (:id %)) (:packages view)))]
+      (should= [:jvm.cli] (mapv :id (:classes host)))
+      (should= [:jvm.sketch] (mapv :id (:classes ui)))))
+
   (it "collapses arrows between proposal packages to one per direction"
     (let [p (assoc policy
               :proposal [{:id :kernel :label "Kernel" :nses [:ir :source]}

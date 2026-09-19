@@ -172,10 +172,19 @@
 (defn- top-seg [id]
   (keyword (first (str/split (name id) #"\."))))
 
+(defn rank-of
+  "Rank for `id`: exact key in `ranks`, else longest dotted prefix."
+  [id ranks]
+  (let [id (as-id id)
+        parts (str/split (name id) #"\.")]
+    (some (fn [n]
+            (get ranks (keyword (str/join "." (take n parts)))))
+          (range (count parts) 0 -1))))
+
 (defn- with-levels [classes ranks]
   (mapv (fn [c]
           (if-let [lv (and (not (:foreign c))
-                           (get ranks (top-seg (:id c))))]
+                           (rank-of (:id c) ranks))]
             (assoc c :level lv)
             c))
         classes))
@@ -185,8 +194,8 @@
   lower-level (outer) one. Both ends must have a rank. Same rank is allowed."
   [e ranks]
   (and (= :dependency (:kind e))
-       (let [rf (get ranks (top-seg (:from e)))
-             rt (get ranks (top-seg (:to e)))]
+       (let [rf (rank-of (:from e) ranks)
+             rt (rank-of (:to e) ranks)]
          (boolean (and rf rt (< rf rt))))))
 
 (defn mark-violations

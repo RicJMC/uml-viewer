@@ -390,9 +390,24 @@
       (#{:elements :classes} mode) hide-elements
       (= :classes mode) hide-classes)))
 
+(defn- id-under?
+  "True when `id` is `nse` or a dotted child of `nse`."
+  [id nse]
+  (let [id (keyword (name id))
+        nse (keyword (name nse))]
+    (or (= id nse)
+        (str/starts-with? (name id) (str (name nse) ".")))))
+
+(defn- claimed-covers?
+  [id claimed]
+  (some (fn [c]
+          (or (id-under? id c) (id-under? c id)))
+        claimed))
+
 (defn proposal-view
-  "Root view with named proposal packages around the real top-level nses.
-  Package ids are `proposal.*` so they never collide with a class id.
+  "Root view with named proposal packages around real nses.
+  A layer `:nses` entry may be a top-level package (`:playfield`) or a
+  nested class (`:jvm.cli`). Package ids are `proposal.*`.
   `which` is a proposal id, a proposal map, or nil (first proposal)."
   ([doc] (proposal-view doc nil))
   ([doc which]
@@ -404,17 +419,25 @@
                       (policy/normalize-proposal (:proposal doc)))
          layers (or (:layers proposal) [])
          ranks (policy/ranks-from-layers layers)
-         stamped (policy/restamp-ranks
-                   (mapcat :classes (:packages root))
-                   (:edges root)
-                   ranks)
-         boxes (:classes stamped)
-         by-id (into {} (map (juxt :id identity) boxes))
+         omit (set (concat (or (:omit doc) []) (or (:omit proposal) [])))
+         root-boxes (mapcat :classes (:packages root))
+         leaves (into [] (remove #(or (:foreign %)
+                                      (policy/omitted-id? (:id %) omit))
+                                 (or (:classes doc) [])))
+         stamped-root (policy/restamp-ranks root-boxes (:edges root) ranks)
+         stamped-leaves (policy/restamp-ranks leaves (:edges root) ranks)
+         by-id (merge (into {} (map (juxt :id identity) (:classes stamped-leaves)))
+                      (into {} (map (juxt :id identity) (:classes stamped-root))))
          claimed (set (mapcat :nses layers))
-         omit (set (:omit proposal))
-         extras (filterv #(not (or (claimed (:id %)) (omit (:id %)))) boxes)
+         extras (filterv #(not (or (claimed-covers? (:id %) claimed)
+                                   (omit (:id %))
+                                   (policy/omitted-id? (:id %) omit)))
+                         (vals by-id))
+         pick (fn [nse]
+                (or (some-> (get by-id nse) vector)
+                    (filterv #(id-under? (:id %) nse) (:classes stamped-leaves))))
          mk (fn [layer]
-              (let [cs (into [] (keep by-id (:nses layer)))]
+              (let [cs (into [] (mapcat pick (:nses layer)))]
                 (when (seq cs)
                   {:id (keyword (str "proposal." (name (:id layer))))
                    :label (:label layer)
@@ -431,7 +454,7 @@
          :title notice
          :proposal true
          :packages pkgs
-         :edges (:edges stamped))
+         :edges (:edges (policy/restamp-ranks (vals by-id) (:edges root) ranks)))
        root))))
 
 (defn layer-view
