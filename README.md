@@ -311,7 +311,11 @@ and C/M dots; double-click still opens a component.
              :name "2026-09-18 10:30:00"
              :layers [{:id :playfield :label "Playfield"
                        :nses [entities world missiles cities batteries flyers]}
-                      {:id :hosts :label "Hosts" :nses [jvm browser]}]
+                      {:id :hosts :label "Hosts" :nses [jvm browser]}
+                      {:id :jvm :label "JVM"
+                       :nses [jvm.cli jvm.main
+                              {:id :quil-swing :label "Quil/Swing"
+                               :nses [jvm.sketch jvm.window]}]}]
              :omit [cli]}]
 ```
 

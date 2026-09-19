@@ -405,30 +405,72 @@
         claimed))
 
 (defn- covering-visible
-  "Map `id` onto a visible box: itself, then a dotted ancestor, else nil."
-  [id visible]
+  "Map `id` onto a visible box: itself, a nested group owner, then a
+  dotted ancestor, else nil."
+  [id visible owners]
   (let [id (keyword (name id))
         parts (str/split (name id) #"\.")]
-    (some (fn [n]
-            (let [k (keyword (str/join "." (take n parts)))]
-              (when (contains? visible k) k)))
-          (range (count parts) 0 -1))))
+    (or (when (contains? visible id) id)
+        (when-let [g (get owners id)]
+          (when (contains? visible g) g))
+        (some (fn [n]
+                (let [k (keyword (str/join "." (take n parts)))]
+                  (when (contains? visible k) k)))
+              (range (dec (count parts)) 0 -1)))))
 
 (defn- remap-proposal-edges
   "Document leaf edges onto ids that are actually on the canvas."
-  [edges visible]
+  [edges visible owners]
   (->> edges
        (keep (fn [e]
-               (let [from (covering-visible (:from e) visible)
-                     to (covering-visible (:to e) visible)]
+               (let [from (covering-visible (:from e) visible owners)
+                     to (covering-visible (:to e) visible owners)]
                  (when (and from to (not= from to))
                    (assoc e :from from :to to)))))
        vec))
 
+(defn- group-owners
+  "Leaf ns id -> nested group id, for remapping arrows onto the group box."
+  [nses]
+  (into {}
+        (mapcat (fn [x]
+                  (when (map? x)
+                    (concat (map (fn [id] [id (:id x)])
+                                 (policy/nse-ids (:nses x)))
+                            (group-owners (:nses x)))))
+                nses)))
+
+(defn- nested-group-box
+  [group kids]
+  (let [id (:id group)
+        crap (reduce config/worse-crap nil (keep :crap kids))
+        mut (reduce config/worse-mutants nil
+                    (map #(select-keys % [:killed :survived]) kids))
+        lv (when (seq (keep :level kids))
+             (apply max (keep :level kids)))]
+    (cond-> {:id id
+             :name (or (:label group) (node-label id))
+             :drill? true
+             :proposal-group? true
+             :nses (:nses group)
+             :members kids
+             :hide-members true
+             :contents (mapv (fn [c]
+                               {:id (:id c)
+                                :name (or (:name c) (node-label (:id c)))
+                                :drill? (boolean (:drill? c))})
+                             kids)}
+      (:mu crap) (assoc :crap crap)
+      (or (:killed mut) (:survived mut))
+      (assoc :killed (:killed mut) :survived (:survived mut))
+      (some? lv) (assoc :level lv))))
+
 (defn proposal-view
   "Root view with named proposal packages around real nses.
-  A layer `:nses` entry may be a top-level package (`:playfield`) or a
-  nested class (`:jvm.cli`). Package ids are `proposal.*`.
+  A layer `:nses` entry may be a top-level package (`:playfield`), a
+  nested class (`:jvm.cli`), or a nested group map
+  `{:id :quil-swing :label \"Quil/Swing\" :nses [...]}` drawn as a child
+  component inside that layer. Package ids are `proposal.*`.
   `which` is a proposal id, a proposal map, or nil (first proposal)."
   ([doc] (proposal-view doc nil))
   ([doc which]
@@ -446,15 +488,20 @@
                                  (or (:classes doc) [])))
          stamped-leaves (:classes (policy/restamp-ranks leaves [] ranks))
          by-id (into {} (map (juxt :id identity) stamped-leaves))
-         claimed (set (mapcat :nses layers))
+         claimed (set (mapcat #(policy/nse-ids (:nses %)) layers))
          extras (filterv #(not (or (claimed-covers? (:id %) claimed)
                                    (omit (:id %))
                                    (policy/omitted-id? (:id %) omit)))
                          stamped-leaves)
-         pick (fn [nse]
-                (if-let [c (get by-id nse)]
-                  [c]
-                  (filterv #(id-under? (:id %) nse) stamped-leaves)))
+         pick (fn pick [nse]
+                (if (map? nse)
+                  (let [kids (into [] (mapcat pick (:nses nse)))]
+                    (if (seq kids)
+                      [(nested-group-box nse kids)]
+                      []))
+                  (if-let [c (get by-id nse)]
+                    [c]
+                    (filterv #(id-under? (:id %) nse) stamped-leaves))))
          mk (fn [layer]
               (let [cs (into [] (mapcat pick (:nses layer)))]
                 (when (seq cs)
@@ -470,11 +517,12 @@
          notice (or (:notice named) (:notice proposal) policy/proposal-notice)
          visible (into (set (map :id (mapcat :classes pkgs)))
                        (map :id (:foreign root)))
+         owners (into {} (mapcat #(group-owners (:nses %)) layers))
          kinds (or (:edge-kinds doc) {})
          omit-edges (or (:omit-edges doc) [])
          remapped (policy/apply-edge-kinds
                     (policy/merge-edges
-                      (remap-proposal-edges (or (:edges doc) []) visible))
+                      (remap-proposal-edges (or (:edges doc) []) visible owners))
                     kinds omit-edges)
          edges (:edges (policy/restamp-ranks (vals by-id) remapped ranks))]
      (if (seq pkgs)
@@ -485,16 +533,70 @@
          :edges edges)
        root))))
 
+(defn- groups-in [nses]
+  (mapcat (fn [x]
+            (if (map? x)
+              (cons x (groups-in (:nses x)))
+              []))
+          nses))
+
+(defn find-nested-group
+  "Nested group map with `id` in proposal `which`, or nil."
+  [doc which id]
+  (let [id (and id (keyword (name id)))
+        named (or (when (and (map? which) (:layers which)) which)
+                  (when which (policy/proposal-by-id doc which))
+                  (first (policy/named-proposals doc)))
+        layers (:layers (or (policy/normalize-proposal named)
+                            (policy/normalize-proposal (:proposal doc)))
+                        [])]
+    (first (filter #(= id (:id %))
+                   (mapcat #(groups-in (:nses %)) layers)))))
+
+(defn- class-in-view [view id]
+  (first (filter #(= id (:id %))
+                 (mapcat :classes (:packages view)))))
+
+(defn- restamp-visible-edges [doc which view classes]
+  (let [named (or (when (and (map? which) (:layers which)) which)
+                  (when which (policy/proposal-by-id doc which))
+                  (first (policy/named-proposals doc)))
+        layers (:layers (or (policy/normalize-proposal named)
+                            (policy/normalize-proposal (:proposal doc)))
+                        [])
+        ranks (policy/ranks-from-layers layers)
+        visible (into (set (map :id classes))
+                      (map :id (:foreign view)))
+        remapped (policy/apply-edge-kinds
+                   (policy/merge-edges
+                     (remap-proposal-edges (or (:edges doc) []) visible {}))
+                   (or (:edge-kinds doc) {})
+                   (or (:omit-edges doc) []))]
+    (:edges (policy/restamp-ranks classes remapped ranks))))
+
 (defn layer-view
-  "One proposal package as the diagram, with its classes visible."
+  "One proposal package as the diagram, with its classes visible.
+  A nested group id expands to that group's member classes."
   [doc which pkg-id]
   (let [root (proposal-view doc which)
-        pkg (first (filter #(= pkg-id (:id %)) (:packages root)))]
-    (if pkg
+        pkg (first (filter #(= pkg-id (:id %)) (:packages root)))
+        box (class-in-view root pkg-id)]
+    (cond
+      pkg
       (assoc root
         :title (or (:label pkg) (name pkg-id))
         :packages [pkg])
-      root)))
+
+      (and box (:proposal-group? box) (seq (:members box)))
+      (let [cs (vec (:members box))]
+        (assoc root
+          :title (or (:name box) (name pkg-id))
+          :packages [{:id pkg-id
+                      :label (or (:name box) (name pkg-id))
+                      :classes cs}]
+          :edges (restamp-visible-edges doc which root cs)))
+
+      :else root)))
 
 (defn proposal-package-id?
   [id]

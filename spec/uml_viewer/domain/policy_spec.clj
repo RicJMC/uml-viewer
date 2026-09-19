@@ -168,6 +168,16 @@
       (should (:violating (first (policy/mark-violations [bad] ranks))))
       (should-be-nil (:violating (first (policy/mark-violations [ok] ranks))))))
 
+  (it "flattens nested group maps in layer nses for ranks"
+    (let [layers [{:id :jvm
+                   :nses [:jvm.cli
+                          {:id :quil-swing :label "Quil/Swing"
+                           :nses [:jvm.sketch :jvm.window]}]}]
+          ranks (policy/ranks-from-layers layers)]
+      (should= {:jvm.cli 0 :jvm.sketch 0 :jvm.window 0} ranks)
+      (should= [:jvm.cli :jvm.sketch :jvm.window]
+               (policy/nse-ids (:nses (first layers))))))
+
   (it "restamps class levels and violating flags from proposal layers"
     (let [layers [{:id :engine :nses [:layout]}
                   {:id :kernel :nses [:ir]}]

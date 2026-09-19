@@ -140,6 +140,27 @@
       (should= :proposal.kernel (:open-layer opened))
       (should-be-nil (:open-layer back))))
 
+  (it "drills a nested proposal group instead of an empty namespace path"
+    (let [doc {:hierarchical true
+               :title "Demo"
+               :proposals [{:id :split :name "split"
+                            :layers [{:id :jvm :label "JVM"
+                                      :nses [:jvm.cli
+                                             {:id :quil-swing
+                                              :label "Quil/Swing"
+                                              :nses [:jvm.sketch]}]}]}]
+               :classes [{:id :jvm.cli :name "Cli" :ns "demo.jvm.cli"}
+                         {:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}]
+               :edges []
+               :order [:jvm]}
+          s {:doc doc :path nil :focus [] :proposal-id :split
+             :scene {:classes []} :cam-x 0 :cam-y 0 :selected nil}
+          opened (events/drill s :quil-swing)
+          back (events/back opened)]
+      (should= :quil-swing (:open-layer opened))
+      (should= [] (:focus opened))
+      (should-be-nil (:open-layer back))))
+
   (it "cycles declutter none → arrows → remove arrows → elements → classes → none"
     (let [s {:declutter :full}]
       (should= :arrows (:declutter (events/cycle-declutter s)))

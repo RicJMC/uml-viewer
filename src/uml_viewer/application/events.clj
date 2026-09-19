@@ -125,7 +125,8 @@
 (defn drill
   "Open the namespace node `id` (next level down)."
   [state id]
-  (if (hierarchy/proposal-package-id? id)
+  (if (or (hierarchy/proposal-package-id? id)
+          (hierarchy/find-nested-group (:doc state) (:proposal-id state) id))
     (rebuild (assoc state :open-layer id :focus []))
     (rebuild (update state :focus (fnil conj []) (last-seg id)))))
 

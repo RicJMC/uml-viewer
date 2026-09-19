@@ -116,6 +116,55 @@
       (should (contains? ends [:jvm.sketch :jvm.cli]))
       (should (some #{[:jvm.sketch :quil] [:jvm.sketch :quil.core]} ends))))
 
+  (it "nests a group map as a child component of a proposal layer"
+    (let [p (assoc policy
+              :proposals [{:id :split :name "split"
+                           :layers [{:id :jvm :label "JVM"
+                                     :nses [:jvm.cli
+                                            {:id :quil-swing
+                                             :label "Quil/Swing"
+                                             :nses [:jvm.sketch]}]}]}]
+              :order [:jvm])
+          g {:classes [{:id :jvm.cli :name "Cli" :ns "demo.jvm.cli"}
+                       {:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}
+                       {:id :quil.core :name "quil.core" :foreign true}]
+             :edges [{:from :jvm.sketch :to :jvm.cli :kind :dependency}
+                     {:from :jvm.sketch :to :quil.core :kind :dependency}]}
+          view (hierarchy/proposal-view (policy/apply-policy p g) :split)
+          jvm (first (filter #(= :proposal.jvm (:id %)) (:packages view)))
+          ids (mapv :id (:classes jvm))
+          quil (first (filter #(= :quil-swing (:id %)) (:classes jvm)))
+          ends (set (map (juxt :from :to) (:edges view)))]
+      (should= [:jvm.cli :quil-swing] ids)
+      (should-not (some #(= :proposal.quil-swing (:id %)) (:packages view)))
+      (should= "Quil/Swing" (:name quil))
+      (should= [:jvm.sketch] (mapv :id (:contents quil)))
+      (should (contains? ends [:quil-swing :jvm.cli]))
+      (should (some #{[:quil-swing :quil] [:quil-swing :quil.core]} ends))))
+
+  (it "drills a nested group into its member classes"
+    (let [p (assoc policy
+              :proposals [{:id :split :name "split"
+                           :layers [{:id :jvm :label "JVM"
+                                     :nses [:jvm.cli
+                                            {:id :quil-swing
+                                             :label "Quil/Swing"
+                                             :nses [:jvm.sketch]}]}]}]
+              :order [:jvm])
+          g {:classes [{:id :jvm.cli :name "Cli" :ns "demo.jvm.cli"}
+                       {:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}
+                       {:id :quil.core :name "quil.core" :foreign true}]
+             :edges [{:from :jvm.sketch :to :jvm.cli :kind :dependency}
+                     {:from :jvm.sketch :to :quil.core :kind :dependency}]}
+          doc (policy/apply-policy p g)
+          view (hierarchy/layer-view doc :split :quil-swing)
+          pkg (first (:packages view))
+          ends (set (map (juxt :from :to) (:edges view)))]
+      (should= :quil-swing (:id pkg))
+      (should= [:jvm.sketch] (mapv :id (:classes pkg)))
+      (should-not (some #{:jvm.cli :quil-swing} (map :id (:classes pkg))))
+      (should (some #{[:jvm.sketch :quil] [:jvm.sketch :quil.core]} ends))))
+
   (it "does not wrap a top-level layer in a same-named inner component"
     (let [p (assoc policy
               :proposals [{:id :layers :name "layers"
