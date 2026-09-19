@@ -194,7 +194,9 @@
   "One diagram: children of `path` as boxes, edges collapsed to that level."
   [doc path]
   (let [path (mapv as-id path)
-        classes (:classes doc)
+        omit-ids (or (:omit doc) [])
+        classes (vec (remove #(policy/omitted-id? (:id %) omit-ids)
+                             (:classes doc)))
         idx (index-classes classes)
         order (or (get-in doc [:order (str/join "." (map name path))])
                   (when (empty? path) (:order doc))

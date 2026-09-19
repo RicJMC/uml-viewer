@@ -24,6 +24,7 @@
   [:main]],
  :policy-file "examples/uml-viewer.policy.edn",
  :order [:main :adapters :application :engine :source :graph :clojure-language :domain],
+ :omit [],
  :edges
  [{:from :main.uml-viewer, :to :adapters.core, :kind :dependency}
   {:from :clojure-language.source-clojure, :to :source, :kind :implements}
@@ -74,6 +75,7 @@
   {:from :engine.layout, :to :domain.config, :kind :dependency}
   {:from :engine.compose, :to :engine.curve, :kind :dependency}
   {:from :adapters.draw, :to :engine.layout, :kind :dependency}
+  {:from :adapters.sketch, :to :engine.hit, :kind :dependency}
   {:from :application.overlay, :to :domain.ir, :kind :dependency}
   {:from :main.ir-generator, :to :application.ir-generator, :kind :dependency}
   {:from :adapters.sketch, :to :domain.policy, :kind :dependency}

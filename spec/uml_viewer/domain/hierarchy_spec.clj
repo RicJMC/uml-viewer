@@ -51,6 +51,13 @@
       (should= "Unassigned" (:label last-pkg))
       (should (some #{:ir} (map :id (:classes last-pkg))))))
 
+  (it "hides policy-omitted nses from the namespace tree"
+    (let [doc (assoc (policy/apply-policy policy graph) :omit [:layout])
+          view (hierarchy/view-at doc [])
+          ids (map :id (mapcat :classes (:packages view)))]
+      (should-not (some #{:layout} ids))
+      (should (some #{:ir} ids))))
+
   (it "omits listed nses from Unassigned"
     (let [p (assoc policy
               :proposals [{:id :engine :name "Engine"

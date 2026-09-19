@@ -107,6 +107,12 @@ Rename or move of a function is a new form: overlay does not match old names.
 - Double-click a component to open the next level. Esc or the ← label goes up.
 - Hover an arrow for a popup of every `from -> to` it bundles, in any
   declutter mode. Violating pairs are red.
+- Right-click a class or component for **Refresh CRAP**, **Refresh
+  Mutation**, **Refresh All Mutation**, or **Omit**. Each writes
+  `to-agent.edn` and wakes the companion. CRAP runs on that class or the
+  files under that component. Mutation is differential `clj -M:mutate` on
+  those src files; All Mutation passes `--mutate-all`. Omit adds the id to
+  the current proposal's `:omit`, or to policy `:omit` on the real diagram.
 - Component titles paint **on top of** crossing arrows.
 - The inspector lists the **real diagram** (the namespace tree) above
   **Proposals**. Click the real row to return to the tree; click a proposal
@@ -212,7 +218,7 @@ Right (the ns tree):
 | `:order` | Order of **existing** top-level ns segments, not new component names |
 | `:levels` | Groups of those segments, **inner (higher-level) first**. Same group = same rank |
 | `:proposals` | Named groupings of real segments; **not** instantiated in source. Inspector **Real diagram** row returns to the ns tree |
-| `:omit` | On a proposal: top-level nses to leave out of **Unassigned** |
+| `:omit` | On a proposal or the policy: nses (and their children) left off the diagram |
 | `:edge-kinds` | Override parser kind for `[from to]` (usually `:association`) |
 | `:omit-edges` | Drop `[from to]` |
 | `:lang` | Which `LanguageGraph` to use (default `:clojure`) |
@@ -323,6 +329,14 @@ Commands are `{:id n :op …}` with a rising `:id`. Writes are tmp-then-rename.
 | `:display` | Viewer loads `:path` (relative to the project root) |
 | `:regen` | Grok rewrites hierarchical policy, regenerates IR, then `:display` |
 | `:quit-for-restart` | Viewer exits the JVM without killing Grok. The associated agent then runs `clj -M:uml-viewer-restart`. |
+| `:refresh-crap` | Run CRAP on `:target` (class or component), then IR |
+| `:refresh-mutate` | Differential mutate `:target`'s src files, then IR |
+| `:refresh-mutate-all` | `clj -M:mutate --mutate-all` on `:target`'s src files, then IR |
+| `:omit` | Add `:target` `:id` to proposal or policy `:omit`, then IR |
+
+Right-click ops include `:target {:id :ns :kind :class|:component :proposal-id?}`.
+`:kind` is `:component` for a layer box (and its nested nses) and `:class`
+for a module.
 
 **Regen** in the inspector queues `:regen` and wakes Grok with literal text, a
 150ms pause, `C-m`, 50ms, then `C-j` (same timing as SwarmForge). The wake-up

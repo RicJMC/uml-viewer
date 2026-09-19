@@ -15,6 +15,12 @@ The diagram is already on screen.
   `src/` files (differential), then `clj -M:ir`. Uncovered mutants are
   coverage gaps: keep the snapshot; do not re-run the file or force a
   full mutation because mutate exited non-zero.
+- Right-click mail (`to-agent.edn`): `:refresh-crap` → `clj -M:crap` for
+  that class or component then IR. `:refresh-mutate` → differential
+  `clj -M:mutate` on those src files. `:refresh-mutate-all` →
+  `clj -M:mutate --mutate-all` on those files. `:omit` → add `:id` to
+  the current proposal's `:omit`, or to policy `:omit` on the real
+  diagram, then IR.
 - The examined project must have aliases `:uml-viewer` (fresh start:
   spawn this companion, wait for `:display`) and `:uml-viewer-restart`
   (new JVM, keep this session, load the EDN immediately). Add them if

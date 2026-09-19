@@ -496,6 +496,26 @@
         (call 'on-main-press s {:x 0 :y 0})
         (should= [true true false] @pinned))))
 
+  (it "right-clicks a class for the element menu instead of opening the card"
+    (let [shown (atom nil)
+          s (state)
+          [x y] (class-xy s :a)]
+      (with-redefs [uml-viewer.adapters.sketch/popup-element-menu!
+                    (fn [_ _ _ _ sel] (reset! shown sel) nil)
+                    uml-viewer.adapters.sketch/ensure-detail-window! (fn [_])
+                    uml-viewer.adapters.sketch/pin-card! (fn [_])]
+        (let [next (call 'on-main-press s {:x x :y y :count 1 :button :right})]
+          (should= :a (:id @shown))
+          (should= :class (:kind @shown))
+          (should-be-nil (:detail-id next))))))
+
+  (it "names a class target and a component target"
+    (let [s (state)]
+      (should= :class (:kind (call 'element-target s {:kind :class :id :a})))
+      (should= :a (:id (call 'element-target s {:kind :class :id :a})))
+      (should= :component
+               (:kind (call 'element-target s {:kind :class :id :a :drill? true})))))
+
   (it "anchors the proposal menu at the AWT mouse-down"
     (let [panel (javax.swing.JPanel.)
           awt (java.awt.event.MouseEvent.
@@ -588,6 +608,18 @@
               (should= :s ((:on-close @opts) :s))))))))
 
 (describe "grok session"
+  (it "queues element mail and wakes the companion"
+    (let [root (str (System/getProperty "java.io.tmpdir")
+                    "/uv-mail-" (System/nanoTime))
+          woke (atom false)]
+      (with-redefs [sketch/notify-agent! (fn [] (reset! woke true) true)]
+        (let [{:keys [cmd woke?]}
+              (sketch/request-agent! root :refresh-crap {:target {:id :a}})]
+          (should= :refresh-crap (:op cmd))
+          (should= {:id :a} (:target cmd))
+          (should woke?)
+          (should @woke)))))
+
   (it "names a tmux session and attaches Terminal to it"
     (let [args (sketch/new-session-args "/tmp/proj")
           script (sketch/osascript (sketch/attach-command))
@@ -604,6 +636,9 @@
       (should (re-find #"invent" sketch/standing-rules))
       (should (re-find #":proposals" sketch/standing-rules))
       (should (re-find #"to-agent.edn" sketch/standing-rules))
+      (should (re-find #":refresh-crap" sketch/standing-rules))
+      (should (re-find #":refresh-mutate-all" sketch/standing-rules))
+      (should (re-find #":omit" sketch/standing-rules))
       (should (re-find #":quit-for-restart" sketch/standing-rules))
       (should (re-find #"uml-viewer-restart" sketch/standing-rules))
       (should-not (re-find #":reload" sketch/standing-rules))

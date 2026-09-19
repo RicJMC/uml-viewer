@@ -8,6 +8,7 @@
             [uml-viewer.application.document :as document]
             [uml-viewer.adapters.draw :as draw]
             [uml-viewer.application.events :as events]
+            [uml-viewer.engine.hit :as hit]
             [uml-viewer.engine.layout :as layout]
             [uml-viewer.domain.mailbox :as mailbox]
             [uml-viewer.application.overlay :as overlay]
@@ -49,8 +50,16 @@
        "4. Regenerate the IR so the EDN mtime updates.\n"
        "Mailbox: the viewer writes .uml-viewer/to-agent.edn; you write\n"
        ".uml-viewer/to-viewer.edn (atomic: tmp then rename). Ops are\n"
-       "{:id n :op :display :path \"...\"}, {:id n :op :regen}, and\n"
-       "{:id n :op :quit-for-restart}.\n"
+       "{:id n :op :display :path \"...\"}, {:id n :op :regen},\n"
+       "{:id n :op :quit-for-restart}, and right-click element ops:\n"
+       "{:id n :op :refresh-crap :target {...}}, :refresh-mutate,\n"
+       ":refresh-mutate-all, :omit. :target is {:id :ns :kind :class|:component\n"
+       " :proposal-id?}. For :refresh-crap run clj -M:crap (that class or the\n"
+       " files under that component) then IR. For :refresh-mutate run\n"
+       " clj -M:mutate on those src files (differential). For\n"
+       " :refresh-mutate-all pass --mutate-all on those files. For :omit, if\n"
+       " :proposal-id is set add :id to that proposal's :omit; otherwise add it\n"
+       " to policy :omit. Then regenerate the IR.\n"
        "A tmux wake-up means mail is waiting. If idle, read to-agent.edn\n"
        "and do that command. If busy, finish first. Do not send tmux yourself.\n"
        "After regen, write :display with the generated EDN path.\n"
@@ -140,11 +149,16 @@
           (apply tmux! step)))
       true)))
 
+(defn request-agent!
+  "Queue `op` for the companion and wake Grok. Returns {:cmd :woke?}."
+  [root op extra]
+  (let [cmd (mailbox/write-command! (mailbox/to-agent root) op extra)]
+    {:cmd cmd :woke? (notify-agent!)}))
+
 (defn request-regen!
   "Queue a :regen command and wake Grok. Returns {:cmd :woke?}."
   [root]
-  (let [cmd (mailbox/write-command! (mailbox/to-agent root) :regen {})]
-    {:cmd cmd :woke? (notify-agent!)}))
+  (request-agent! root :regen {}))
 
 (def terminal-title "Grok")
 
@@ -530,6 +544,38 @@
       :else
       {:invoker invoker :x (int x) :y (int y)})))
 
+(defn- element-target [state sel]
+  (let [id (:id sel)
+        c (when id (hit/class-by-id (:scene state) id))
+        component? (boolean
+                     (or (events/layer-id sel)
+                         (:dummy? c)
+                         (seq (:contents c))
+                         (= :package (:kind sel))))]
+    (cond-> {:id id :kind (if component? :component :class)}
+      (:ns c) (assoc :ns (:ns c))
+      (:proposal-id state) (assoc :proposal-id (:proposal-id state)))))
+
+(defn- popup-element-menu! [event x y state sel]
+  (let [anchor (popup-anchor event x y)
+        root (overlay/metrics-root (:path state))
+        target (element-target state sel)]
+    (later!
+      (fn []
+        (let [menu (JPopupMenu.)
+              add (fn [label op]
+                    (let [item (JMenuItem. label)]
+                      (.addActionListener item
+                        (reify ActionListener
+                          (actionPerformed [_ _]
+                            (request-agent! root op {:target target}))))
+                      (.add menu item)))]
+          (add "Refresh CRAP" :refresh-crap)
+          (add "Refresh Mutation" :refresh-mutate)
+          (add "Refresh All Mutation" :refresh-mutate-all)
+          (add "Omit" :omit)
+          (.show menu (:invoker anchor) (int (:x anchor)) (int (:y anchor))))))))
+
 (defn- popup-proposal-menu! [event x y id pname]
   (let [anchor (popup-anchor event x y)]
     (later!
@@ -581,6 +627,13 @@
             sel (:selected state)
             n (click-count event)]
         (cond
+          (and (right-click? event)
+               (or (= :class (:kind sel))
+                   (= :child (:kind sel))
+                   (events/layer-id sel)))
+          (do (popup-element-menu! event x y state sel)
+              state)
+
           (and (>= n 2) (events/layer-id sel))
           (events/drill state (events/layer-id sel))
 

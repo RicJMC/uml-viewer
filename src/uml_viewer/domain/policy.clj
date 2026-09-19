@@ -23,6 +23,11 @@
         p (name prefix)]
     (or (= s p) (str/starts-with? s (str p ".")))))
 
+(defn omitted-id?
+  "True when `id` is listed in `omit` or sits under a listed component."
+  [id omit]
+  (boolean (some #(matches-prefix? (as-id id) (as-id %)) omit)))
+
 (defn- collapse-id [id prefixes]
   (->> prefixes
        (filter #(matches-prefix? id %))
@@ -379,6 +384,7 @@
                :levels levels
                :edge-kinds (or (:edge-kinds policy) {})
                :omit-edges (or (:omit-edges policy) [])
+               :omit (mapv as-id (or (:omit policy) []))
                :classes (:classes graph)
                :edges (:edges graph)}
         (seq proposals) (assoc :proposals proposals)
