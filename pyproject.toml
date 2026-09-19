@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uml-viewer-python"
+version = "0.1.0"
+description = "Python source and quality adapters for UML viewer"
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+quality = ["coverage>=7.6,<8", "radon>=6,<7", "pytest>=7,<9"]
+
+[project.scripts]
+uml-python = "uml_viewer_python.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["uml_viewer_python*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

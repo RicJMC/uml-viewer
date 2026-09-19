@@ -3,3 +3,12 @@
 target
 .DS_Store
 .uml-viewer/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage*
+build/
+dist/
