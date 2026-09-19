@@ -102,18 +102,26 @@
     (when (or (:killed worst) (:survived worst))
       worst)))
 
+(defn- rolled-level
+  "Highest (outermost) :level among `id` and its descendants."
+  [classes id]
+  (let [lvs (keep :level (filter #(under-id? % id) classes))]
+    (when (seq lvs)
+      (apply max lvs))))
+
 (defn- view-class [idx classes path id]
   (let [leaf (get idx id)
         kids (contents-of classes path id)
         drill? (boolean (seq kids))
         hide? drill?
         crap (rolled-crap classes id)
-        mut (rolled-mutants classes id)]
+        mut (rolled-mutants classes id)
+        lv (rolled-level classes id)]
     (cond-> {:id id
              :name (or (:name leaf) (node-label id))
              :drill? drill?}
       (:ns leaf) (assoc :ns (:ns leaf))
-      (some? (:level leaf)) (assoc :level (:level leaf))
+      (some? lv) (assoc :level lv)
       (:stereotype leaf) (assoc :stereotype (:stereotype leaf))
       crap (assoc :crap crap)
       mut (assoc :killed (:killed mut) :survived (:survived mut))
@@ -295,7 +303,7 @@
         mut (reduce config/worse-mutants nil
                     (map #(select-keys % [:killed :survived]) classes))
         lv (when (seq (keep :level classes))
-             (apply min (keep :level classes)))]
+             (apply max (keep :level classes)))]
     (cond-> dummy
       (:mu crap) (assoc :crap crap)
       (or (:killed mut) (:survived mut))

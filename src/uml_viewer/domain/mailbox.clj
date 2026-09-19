@@ -25,6 +25,24 @@
       (edn/read-string (slurp file))
       (catch Exception _ nil))))
 
+(def ^:private keep-n 32)
+
+(defn read-mailbox
+  "Envelope `{:next-id n :queue [cmd …]}`. A legacy single command becomes a queue."
+  [file]
+  (let [raw (read-command file)]
+    (cond
+      (nil? raw) {:next-id 1 :queue []}
+      (vector? (:queue raw)) {:next-id (long (or (:next-id raw) 1))
+                              :queue (vec (:queue raw))}
+      (:op raw) {:next-id (inc (long (or (:id raw) 0)))
+                 :queue [raw]}
+      :else {:next-id 1 :queue []})))
+
+(defn last-id
+  [file]
+  (long (or (:id (last (:queue (read-mailbox file)))) 0)))
+
 (defn- atomic-write!
   [file m]
   (let [file (io/file file)
@@ -44,18 +62,23 @@
                                 [StandardCopyOption/REPLACE_EXISTING]))))))
 
 (defn write-command!
-  "Write `op` (and extra keys) with an id greater than any previous command."
+  "Append `op` (and extra keys) onto the mailbox queue."
   [file op extra]
-  (let [prev (read-command file)
-        id (inc (long (or (:id prev) 0)))
-        cmd (merge {:id id :op (keyword op)} extra)]
-    (atomic-write! file cmd)
+  (let [box (read-mailbox file)
+        id (long (or (:next-id box) 1))
+        cmd (merge {:id id :op (keyword op)} extra)
+        kept (vec (filter #(> (long (:id %)) (- id keep-n)) (:queue box)))]
+    (atomic-write! file {:next-id (inc id)
+                         :queue (conj kept cmd)})
     cmd))
 
-(defn unread
-  "Return cmd when its :id is newer than `seen-id`."
+(defn pending
+  "Queued commands with :id greater than `seen-id`, oldest first."
   [file seen-id]
-  (let [cmd (read-command file)
-        id (:id cmd)]
-    (when (and (number? id) (> (long id) (long (or seen-id 0))))
-      cmd)))
+  (vec (filter #(> (long (:id %)) (long (or seen-id 0)))
+               (:queue (read-mailbox file)))))
+
+(defn unread
+  "Next queued command after `seen-id`, or nil."
+  [file seen-id]
+  (first (pending file seen-id)))

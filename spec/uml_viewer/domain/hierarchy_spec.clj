@@ -51,6 +51,20 @@
       (should= "Unassigned" (:label last-pkg))
       (should (some #{:ir} (map :id (:classes last-pkg))))))
 
+  (it "gives a component the max level of its elements"
+    (let [doc {:hierarchical true
+               :classes [{:id :engine :name "Engine" :level 0}
+                         {:id :engine.layout :name "Layout" :level 2}
+                         {:id :ir :name "Ir" :level 0}]
+               :edges []
+               :order [:engine :ir]}
+          view (hierarchy/view-at doc [])
+          box (fn [id]
+                (first (filter #(= id (:id %))
+                               (mapcat :classes (:packages view)))))]
+      (should= 2 (:level (box :engine)))
+      (should= 0 (:level (box :ir)))))
+
   (it "hides policy-omitted nses from the namespace tree"
     (let [doc (assoc (policy/apply-policy policy graph) :omit [:layout])
           view (hierarchy/view-at doc [])

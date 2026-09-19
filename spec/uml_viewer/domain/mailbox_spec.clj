@@ -16,8 +16,19 @@
           b (mailbox/write-command! f :regen {})]
       (should= 1 (:id a))
       (should= 2 (:id b))
-      (should= :regen (:op (mailbox/read-command f)))
+      (should= 2 (count (:queue (mailbox/read-mailbox f))))
+      (should= :regen (:op (last (:queue (mailbox/read-mailbox f)))))
       (should-not (.exists (io/file (str (.getPath f) ".tmp"))))))
+
+  (it "queues later commands instead of overwriting"
+    (let [root (tmp-root)
+          f (mailbox/to-agent root)]
+      (mailbox/write-command! f :context {:context :real})
+      (mailbox/write-command! f :omit {:target {:id :a}})
+      (let [q (mailbox/pending f 0)]
+        (should= [:context :omit] (mapv :op q))
+        (should= :context (:op (mailbox/unread f 0)))
+        (should= :omit (:op (mailbox/unread f 1))))))
 
   (it "returns unread commands only once past seen-id"
     (let [root (tmp-root)
@@ -25,6 +36,20 @@
       (mailbox/write-command! f :display {:path "a.edn"})
       (should= :display (:op (mailbox/unread f 0)))
       (should-be-nil (mailbox/unread f 1))))
+
+  (it "drains a viewer queue in order"
+    (let [root (tmp-root)
+          f (mailbox/to-viewer root)
+          seen (atom 0)
+          ops (atom [])]
+      (mailbox/write-command! f :nope {})
+      (mailbox/write-command! f :quit-for-restart {})
+      (loop []
+        (when-let [cmd (mailbox/unread f @seen)]
+          (swap! ops conj (:op cmd))
+          (reset! seen (:id cmd))
+          (recur)))
+      (should= [:nope :quit-for-restart] @ops)))
 
   (it "switches the viewer path on :display"
     (let [s {:path "examples/library.edn" :mail-seen 0 :waiting true}

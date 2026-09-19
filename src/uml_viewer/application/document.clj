@@ -58,7 +58,7 @@
 (def waiting-message "Waiting for agent to create diagram.")
 
 (defn- mail-seen-at [root]
-  (long (or (:id (mailbox/read-command (mailbox/to-viewer root))) 0)))
+  (mailbox/last-id (mailbox/to-viewer root)))
 
 (defn waiting-state
   "Blank canvas until the companion sends :display. R still loads `path`."
@@ -150,10 +150,11 @@
   (if-not (:path state)
     state
     (let [root (overlay/metrics-root (:path state))
-          cmd (mailbox/unread (mailbox/to-viewer root) (:mail-seen state))]
-      (if cmd
-        (apply-mail state cmd)
-        state))))
+          f (mailbox/to-viewer root)]
+      (loop [state state]
+        (if-let [cmd (mailbox/unread f (:mail-seen state))]
+          (recur (apply-mail state cmd))
+          state)))))
 
 (defn maybe-reload [state]
   (if (or (:waiting state) (nil? (:path state)))

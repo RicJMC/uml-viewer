@@ -297,6 +297,7 @@ instead of lines; hover lists deps; red if any pair is violating) →
 
 When a proposal is shown, rank follows **that** proposal's component order
 and violating arrows are re-evaluated. The real diagram uses `:levels`.
+A component inherits the **max** level of its elements.
 Class boxes show the current view's rank (innermost **0**)
 at the upper left; the class card repeats **Level n**. Level 0 is drawn at
 the **bottom**. Good arrows (outer → inner) point down; violating arrows
@@ -329,7 +330,10 @@ project (gitignored). The file is the mail; tmux is only a doorbell.
 | `.uml-viewer/to-viewer.edn` | Grok → viewer |
 | `.uml-viewer/to-agent.edn` | viewer → Grok |
 
-Commands are `{:id n :op …}` with a rising `:id`. Writes are tmp-then-rename.
+Each mailbox file is a small queue `{:next-id n :queue [cmd …]}` (tmp-then-rename).
+Commands have a rising `:id`. Append; do not overwrite. The reader drains every
+item with id greater than last seen, oldest first. About 32 recent commands
+are kept.
 
 | `:op` | Meaning |
 |-------|---------|

@@ -656,6 +656,7 @@
       (should (re-find #":refresh-mutate-all" sketch/standing-rules))
       (should (re-find #":omit" sketch/standing-rules))
       (should (re-find #":context" sketch/standing-rules))
+      (should (re-find #":queue" sketch/standing-rules))
       (should (re-find #":quit-for-restart" sketch/standing-rules))
       (should (re-find #"uml-viewer-restart" sketch/standing-rules))
       (should-not (re-find #":reload" sketch/standing-rules))

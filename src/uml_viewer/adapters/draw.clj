@@ -662,23 +662,25 @@
     muted))
 
 (defn- draw-detail-cells [row y]
-  (if (and (not= :col-header (:kind row)) (:mut-note row))
+  (doseq [col (detail/column-layout)
+          :when (or (= :col-header (:kind row))
+                    (not (and (:mut-note row) (= :mutation (:group col)))))]
+    (let [s (if (= :col-header (:kind row))
+              (:label col)
+              (get row (:key col)))]
+      (when s
+        (q/text-align :right :top)
+        (q/text-size 13)
+        (rgb (if (= :col-header (:kind row))
+               gold
+               (cell-color row col)))
+        (q/text s (:right col) y))))
+  (when (and (not= :col-header (:kind row)) (:mut-note row))
     (when-let [g (first (filter #(= :mutation (:id %)) (detail/group-layout)))]
       (q/text-align :right :top)
       (q/text-size 13)
       (rgb muted)
-      (q/text (:mut-note row) (:right g) y))
-    (doseq [col (detail/column-layout)]
-      (let [s (if (= :col-header (:kind row))
-                (:label col)
-                (get row (:key col)))]
-        (when s
-          (q/text-align :right :top)
-          (q/text-size 13)
-          (rgb (if (= :col-header (:kind row))
-                 gold
-                 (cell-color row col)))
-          (q/text s (:right col) y))))))
+      (q/text (:mut-note row) (:right g) y))))
 
 (defn- draw-detail-groups [y]
   (doseq [g (detail/group-layout)]
