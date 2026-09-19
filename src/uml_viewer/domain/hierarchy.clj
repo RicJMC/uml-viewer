@@ -404,6 +404,27 @@
           (or (id-under? id c) (id-under? c id)))
         claimed))
 
+(defn- covering-visible
+  "Map `id` onto a visible box: itself, then a dotted ancestor, else nil."
+  [id visible]
+  (let [id (keyword (name id))
+        parts (str/split (name id) #"\.")]
+    (some (fn [n]
+            (let [k (keyword (str/join "." (take n parts)))]
+              (when (contains? visible k) k)))
+          (range (count parts) 0 -1))))
+
+(defn- remap-proposal-edges
+  "Document leaf edges onto ids that are actually on the canvas."
+  [edges visible]
+  (->> edges
+       (keep (fn [e]
+               (let [from (covering-visible (:from e) visible)
+                     to (covering-visible (:to e) visible)]
+                 (when (and from to (not= from to))
+                   (assoc e :from from :to to)))))
+       vec))
+
 (defn proposal-view
   "Root view with named proposal packages around real nses.
   A layer `:nses` entry may be a top-level package (`:playfield`) or a
@@ -420,22 +441,20 @@
          layers (or (:layers proposal) [])
          ranks (policy/ranks-from-layers layers)
          omit (set (concat (or (:omit doc) []) (or (:omit proposal) [])))
-         root-boxes (mapcat :classes (:packages root))
          leaves (into [] (remove #(or (:foreign %)
                                       (policy/omitted-id? (:id %) omit))
                                  (or (:classes doc) [])))
-         stamped-root (policy/restamp-ranks root-boxes (:edges root) ranks)
-         stamped-leaves (policy/restamp-ranks leaves (:edges root) ranks)
-         by-id (merge (into {} (map (juxt :id identity) (:classes stamped-leaves)))
-                      (into {} (map (juxt :id identity) (:classes stamped-root))))
+         stamped-leaves (:classes (policy/restamp-ranks leaves [] ranks))
+         by-id (into {} (map (juxt :id identity) stamped-leaves))
          claimed (set (mapcat :nses layers))
          extras (filterv #(not (or (claimed-covers? (:id %) claimed)
                                    (omit (:id %))
                                    (policy/omitted-id? (:id %) omit)))
-                         (vals by-id))
+                         stamped-leaves)
          pick (fn [nse]
-                (or (some-> (get by-id nse) vector)
-                    (filterv #(id-under? (:id %) nse) (:classes stamped-leaves))))
+                (if-let [c (get by-id nse)]
+                  [c]
+                  (filterv #(id-under? (:id %) nse) stamped-leaves)))
          mk (fn [layer]
               (let [cs (into [] (mapcat pick (:nses layer)))]
                 (when (seq cs)
@@ -448,13 +467,22 @@
                        :label "Unassigned"
                        :classes extras}))
          pkgs (vec (rseq pkgs))
-         notice (or (:notice named) (:notice proposal) policy/proposal-notice)]
+         notice (or (:notice named) (:notice proposal) policy/proposal-notice)
+         visible (into (set (map :id (mapcat :classes pkgs)))
+                       (map :id (:foreign root)))
+         kinds (or (:edge-kinds doc) {})
+         omit-edges (or (:omit-edges doc) [])
+         remapped (policy/apply-edge-kinds
+                    (policy/merge-edges
+                      (remap-proposal-edges (or (:edges doc) []) visible))
+                    kinds omit-edges)
+         edges (:edges (policy/restamp-ranks (vals by-id) remapped ranks))]
      (if (seq pkgs)
        (assoc root
          :title notice
          :proposal true
          :packages pkgs
-         :edges (:edges (policy/restamp-ranks (vals by-id) (:edges root) ranks)))
+         :edges edges)
        root))))
 
 (defn layer-view

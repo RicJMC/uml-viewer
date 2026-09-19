@@ -100,6 +100,37 @@
       (should= [:jvm.cli] (mapv :id (:classes host)))
       (should= [:jvm.sketch] (mapv :id (:classes ui)))))
 
+  (it "keeps leaf arrows after a nested-id split"
+    (let [p (assoc policy
+              :proposals [{:id :split :name "split"
+                           :layers [{:id :host :label "JVM host" :nses [:jvm.cli]}
+                                    {:id :ui :label "JVM UI" :nses [:jvm.sketch]}]}]
+              :order [:jvm :ir])
+          g {:classes [{:id :jvm.cli :name "Cli" :ns "demo.jvm.cli"}
+                       {:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}
+                       {:id :quil.core :name "quil.core" :foreign true}]
+             :edges [{:from :jvm.sketch :to :jvm.cli :kind :dependency}
+                     {:from :jvm.sketch :to :quil.core :kind :dependency}]}
+          view (hierarchy/proposal-view (policy/apply-policy p g) :split)
+          ends (set (map (juxt :from :to) (:edges view)))]
+      (should (contains? ends [:jvm.sketch :jvm.cli]))
+      (should (some #{[:jvm.sketch :quil] [:jvm.sketch :quil.core]} ends))))
+
+  (it "does not wrap a top-level layer in a same-named inner component"
+    (let [p (assoc policy
+              :proposals [{:id :layers :name "layers"
+                           :layers [{:id :game-api :label "Game API"
+                                     :nses [:game-api]}]}]
+              :order [:game-api])
+          g {:classes [{:id :game-api.core :name "Core"
+                        :ns "demo.game-api.core"}]}
+          view (hierarchy/proposal-view (policy/apply-policy p g) :layers)
+          pkg (first (filter #(= :proposal.game-api (:id %))
+                             (:packages view)))
+          ids (mapv :id (:classes pkg))]
+      (should= [:game-api.core] ids)
+      (should-not (some #{:game-api} ids))))
+
   (it "collapses arrows between proposal packages to one per direction"
     (let [p (assoc policy
               :proposal [{:id :kernel :label "Kernel" :nses [:ir :source]}
