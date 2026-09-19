@@ -74,7 +74,8 @@
                   [(:name n) (assoc n
                                :killed (:killed form)
                                :survived (:survived form)
-                               :uncovered (:uncovered form))]))
+                               :uncovered (:uncovered form)
+                               :sites (:sites form))]))
               (:forms snapshot))))
 
 (defn class-namespace
@@ -106,7 +107,8 @@
                    :coverage (pct->ratio (:coverage crap-fn)))
     mut-fn (assoc :killed (or (:killed mut-fn) 0)
                   :survived (or (:survived mut-fn) 0)
-                  :uncovered (or (:uncovered mut-fn) 0))
+                  :uncovered (or (:uncovered mut-fn) 0)
+                  :sites (or (:sites mut-fn) 0))
     (or (:private op) (:private mut-fn)) (assoc :private true)))
 
 (defn- ops-for-class [c crap-fns mut-fns]
@@ -129,13 +131,15 @@
         ops (ops-for-class c crap-fns mut-fns)
         killed (apply + 0 (keep :killed (vals mut-fns)))
         survived (apply + 0 (keep :survived (vals mut-fns)))
-        uncovered (apply + 0 (keep :uncovered (vals mut-fns)))]
+        uncovered (apply + 0 (keep :uncovered (vals mut-fns)))
+        sites (apply + 0 (keep :sites (vals mut-fns)))]
     (cond-> c
       (seq scores) (assoc :crap (class-crap scores)
                           :cc (apply + (map :complexity crap-fns)))
       (seq coverages) (assoc :coverage (pct->ratio
                                          (/ (reduce + coverages) (count coverages))))
-      (seq mut-fns) (assoc :killed killed :survived survived :uncovered uncovered)
+      (seq mut-fns) (assoc :killed killed :survived survived :uncovered uncovered
+                           :sites sites)
       (seq ops) (assoc :ops ops))))
 
 (defn- paint-packages [packages metrics]

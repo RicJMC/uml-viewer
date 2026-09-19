@@ -445,7 +445,8 @@ the worst function in the namespace, not a sum). Column groups are labeled
 `--crap--` (Crap, CC, Cov) and `--mutation--` (killed, survived, uncovered).
 The class row shows average CRAP with a `μ` suffix and omits CC. Killed is
 white. Survived and uncovered are green at 0 and red when nonzero. A row
-with no mutation sites shows `---no mutation sites---` instead of zeros.
+with no mutation operators (`:sites` 0) shows `---no mutation sites---`.
+A form with operators still shows killed/survived/uncovered, including zeros.
 
 Edge `:kind` values:
 

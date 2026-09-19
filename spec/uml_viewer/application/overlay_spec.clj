@@ -17,8 +17,8 @@
                                 :complexity 2 :coverage 100.0 :crap 2.0}]}))
       (spit (io/file mut-dir "demo.edn")
             (pr-str {:source "src/demo/app.clj"
-                     :forms [{:id "defn/go" :hash "a" :killed 4 :survived 1 :uncovered 2}
-                             {:id "defn-/hide" :hash "b" :killed 2 :survived 0 :uncovered 0}]}))
+                     :forms [{:id "defn/go" :hash "a" :killed 4 :survived 1 :uncovered 2 :sites 7}
+                             {:id "defn-/hide" :hash "b" :killed 2 :survived 0 :uncovered 0 :sites 2}]}))
       (try
         (let [metrics (overlay/load-metrics root)
               d (ir/normalize {:packages
@@ -41,7 +41,9 @@
           (should= 2 (:uncovered go))
           (should (:private hide))
           (should= 2 (:killed hide))
-          (should= 0 (:uncovered hide)))
+          (should= 0 (:uncovered hide))
+          (should= 7 (:sites go))
+          (should= 9 (:sites c)))
         (finally
           (doseq [f (reverse (file-seq (io/file root)))]
             (io/delete-file f true))))))
