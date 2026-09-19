@@ -1,0 +1,8 @@
+{:title "Python library"
+ :src "examples/python/library"
+ :prefix "library"
+ :lang :python
+ :out "target/python.edn"
+ :hierarchical true
+ :order [book catalog]
+ :foreign [external.abc]}

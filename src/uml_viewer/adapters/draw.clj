@@ -48,10 +48,15 @@
   (grade-ramp grade [90 110 100] [224 122 74] [212 192 90] [95 181 138]))
 
 (defn crap-grade-of [m]
-  (config/crap-grade (config/crap-risk (:crap m))))
+  (let [risk (config/crap-risk (:crap m))]
+    (when (or risk (nil? (:metrics-status m)))
+      (config/crap-grade risk))))
 
 (defn mutation-grade-of [m]
-  (config/mutation-grade (config/mutation-ratio m)))
+  (let [ratio (config/mutation-ratio m)]
+    (when (and (not= "partial" (:mutation-status m))
+               (or ratio (nil? (:metrics-status m))))
+      (config/mutation-grade ratio))))
 
 (defn grade-of
   "Average of CRAP and mutation 1–10 grades on `m`."

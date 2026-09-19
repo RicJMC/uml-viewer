@@ -78,6 +78,16 @@
     (or (= id (:id c))
         (str/starts-with? (name (:id c)) pfx))))
 
+(defn- measurement-state [classes]
+  (cond-> {}
+    (some :metrics-status classes) (assoc :metrics-status
+                                         (if (every? #(= "current" (:metrics-status %)) classes)
+                                           "current" "missing"))
+    (some #(= "partial" (:mutation-status %)) classes) (assoc :mutation-status "partial")))
+
+(defn- crap-value [component]
+  (if (:metrics-status component) (:crap component) (or (:crap component) {})))
+
 (defn- rolled-crap
   "Worst (μ+σ) among `id` and its descendants.
   A class with no CRAP data counts as red."
@@ -85,7 +95,7 @@
   (let [worst (reduce config/worse-crap nil
                       (keep (fn [c]
                               (when (under-id? c id)
-                                (or (:crap c) {})))
+                                (crap-value c)))
                             classes))]
     (when (:mu worst)
       worst)))
@@ -108,10 +118,14 @@
         drill? (boolean (seq kids))
         hide? drill?
         crap (rolled-crap classes id)
-        mut (rolled-mutants classes id)]
+        mut (rolled-mutants classes id)
+        state (measurement-state (filter #(under-id? % id) classes))]
     (cond-> {:id id
              :name (or (:name leaf) (node-label id))
              :drill? drill?}
+      (seq state) (merge state)
+      (:cc leaf) (assoc :cc (:cc leaf))
+      (:uncovered leaf) (assoc :uncovered (:uncovered leaf))
       (:ns leaf) (assoc :ns (:ns leaf))
       (some? (:level leaf)) (assoc :level (:level leaf))
       (:stereotype leaf) (assoc :stereotype (:stereotype leaf))
@@ -289,12 +303,12 @@
 
 (defn- with-metrics [dummy classes]
   (let [crap (reduce config/worse-crap nil
-                     (map (fn [c] (or (:crap c) {})) classes))
+                     (map (fn [c] (crap-value c)) classes))
         mut (reduce config/worse-mutants nil
                     (map #(select-keys % [:killed :survived]) classes))
         lv (when (seq (keep :level classes))
              (apply min (keep :level classes)))]
-    (cond-> dummy
+    (cond-> (merge dummy (measurement-state classes))
       (:mu crap) (assoc :crap crap)
       (or (:killed mut) (:survived mut))
       (assoc :killed (:killed mut) :survived (:survived mut))

@@ -559,11 +559,17 @@
         in-sidebar? (>= x (- w layout/sidebar-w))]
     (cond
       (events/regen-hit? x y w h)
-      (let [root (overlay/metrics-root (:path state))
-            {:keys [woke?]} (request-regen! root)]
-        (assoc state :mail-status (if woke?
-                                    "Regen requested."
-                                    "Regen queued; Grok session not attached.")))
+      (if-let [regenerate (:regenerate @!bridge)]
+        (try
+          (regenerate)
+          (assoc (document/load-path (:path state)) :mail-status "Regenerated from source.")
+          (catch Exception error
+            (assoc state :mail-status (str "Regen failed: " (.getMessage error)))))
+        (let [root (overlay/metrics-root (:path state))
+              {:keys [woke?]} (request-regen! root)]
+          (assoc state :mail-status (if woke?
+                                      "Regen requested."
+                                      "Regen queued; Grok session not attached."))))
 
       in-sidebar?
       (let [hit (events/inspector-hit state x y w)]
