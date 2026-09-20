@@ -46,6 +46,8 @@ the IR. See [Policy](#policy).
 
 Needs Clojure CLI and Java 21+.
 
+From **this repo**:
+
 ```bash
 clj -M:ir                            # policy → examples/uml-viewer.edn
 clj -M:run
@@ -53,6 +55,24 @@ clj -M:run examples/library.edn
 clj -M:run examples/uml-viewer.edn
 clj -M:run --help
 ```
+
+From **any Clojure project** you want to view (no local uml-viewer checkout
+needed):
+
+```bash
+cd /path/to/the-project
+curl -fsSL https://raw.githubusercontent.com/unclebob/uml-viewer/master/scripts/get-uml-viewer -o get-uml-viewer
+chmod +x get-uml-viewer
+./get-uml-viewer               # fetch, write ./uml, start
+./uml                          # later fresh starts
+./uml --restart                # companion only: new JVM, restore last view
+```
+
+`scripts/get-uml-viewer` is in this repo. It clones uml-viewer into
+**gitignored** `.uml-viewer/uml-viewer/` (a nested `.git` there is invisible
+to the project's repo), writes `./uml`, and starts the viewer. `--install-only`
+skips the start. `UML_VIEWER_REPO_URL` and `UML_VIEWER_REF` override the clone
+source (default `master`).
 
 A **tmux** session `uml-viewer-grok` starts interactive Grok in the
 **examined project's directory** (`--yolo --trust --rules …` plus a launch
@@ -63,21 +83,21 @@ instance — not every Grok in this repo — also runs `clj -M:crap`,
 `clj -M:mutate`, and IR generate after later changes. Project-wide rules live
 in `.grok/rules/uml-viewer.md`.
 
-The examined project (and this one) must expose two aliases:
+Prefer `./uml` in the examined project (from `get-uml-viewer`). Aliases
+`:uml-viewer` / `:uml-viewer-restart` still work if present.
 
-| Alias | Who | What |
-|-------|-----|------|
-| `:uml-viewer` | anyone | Fresh window. Starts the companion. Waits for `:display`. |
-| `:uml-viewer-restart` | **associated agent only** | New JVM, same companion. Restores the last view. |
+| Command | Who | What |
+|---------|-----|------|
+| `./uml` | anyone | Fresh window. Starts the companion. Waits for `:display`. |
+| `./uml --restart` | **associated agent only** | New JVM, same companion. Restores the last view. |
 
-Do **not** pass `--restart` (or use `:uml-viewer-restart`) unless you are that
-companion recycling the window after source changes. A stray `--restart`
-skips spawning Grok and leaves a diagram with no agent. The companion
-recycles the window by writing `:quit-for-restart` to
-`.uml-viewer/to-viewer.edn`, waiting for the JVM to exit, then
-`clj -M:uml-viewer-restart`. The new JVM restores depth, pan, zoom, and
-which proposal was showing (`.uml-viewer/session.edn`). Do not SIGKILL.
-Closing the window still kills Grok.
+Do **not** pass `--restart` unless you are that companion recycling the
+window after source changes. A stray `--restart` skips spawning Grok and
+leaves a diagram with no agent. The companion recycles the window by
+writing `:quit-for-restart` to `.uml-viewer/to-viewer.edn`, waiting for
+the JVM to exit, then `./uml --restart`. The new JVM restores depth, pan,
+zoom, and which proposal was showing (`.uml-viewer/session.edn`). Do not
+SIGKILL. Closing the window still kills Grok.
 
 On a fresh start the canvas stays blank until the companion sends `:display`,
 with **Waiting for agent to create diagram.** `R` reloads the current EDN
