@@ -191,6 +191,38 @@
     (let [s (document/load-path "examples/library.edn")]
       (should= s (document/maybe-reload s))))
 
+  (it "reloads overlay when metrics snapshots change, keeping an open card"
+    (let [root (io/file "target" (str "doc-metrics-" (System/nanoTime)))
+          examples (io/file root "examples")
+          metrics (io/file root ".metrics")]
+      (.mkdirs examples)
+      (.mkdirs metrics)
+      (spit (io/file examples "diagram.edn")
+            (pr-str {:hierarchical true
+                     :title "Demo"
+                     :classes [{:id :board :name "Board" :ns "demo.board"}]
+                     :edges []}))
+      (spit (io/file metrics "crap.edn")
+            (pr-str {:entries [{:name "place" :namespace "demo.board"
+                                :complexity 1 :coverage 100.0 :crap 1.0}]}))
+      (try
+        (let [path (.getPath (io/file examples "diagram.edn"))
+              s (assoc (document/load-path path) :detail-id :board)
+              before (first (filter #(= :board (:id %)) (:classes (:doc s))))]
+          (should= 1.0 (get-in before [:crap :mu]))
+          (spit (io/file metrics "crap.edn")
+                (pr-str {:entries [{:name "place" :namespace "demo.board"
+                                    :complexity 4 :coverage 50.0 :crap 12.5
+                                    :updated true}]}))
+          (let [next (document/maybe-reload s)
+                after (first (filter #(= :board (:id %)) (:classes (:doc next))))]
+            (should= :board (:detail-id next))
+            (should= 12.5 (get-in after [:crap :mu]))
+            (should-not= (:metrics-stamp s) (:metrics-stamp next))))
+        (finally
+          (doseq [f (reverse (file-seq root))]
+            (io/delete-file f true))))))
+
   (it "records an error when reloaded IR is invalid"
     (let [f (java.io.File/createTempFile "bad" ".edn")]
       (spit f "{:packages [{:classes [{}]}]}")

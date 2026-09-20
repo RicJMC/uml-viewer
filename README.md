@@ -74,14 +74,15 @@ to the project's repo), writes `./uml`, and starts the viewer. `--install-only`
 skips the start. `UML_VIEWER_REPO_URL` and `UML_VIEWER_REF` override the clone
 source (default `master`).
 
-A **tmux** session `uml-viewer-grok` starts interactive Grok in the
-**examined project's directory** (`--yolo --trust --rules …` plus a launch
-prompt). On start it writes a hierarchical policy from that project's
-namespaces and regenerates the IR. Type there; Esc is the real TUI interrupt.
-Closing the diagram kills that tmux session (and the Terminal attach). That
-instance — not every Grok in this repo — also runs `clj -M:crap`,
-`clj -M:mutate`, and IR generate after later changes. Project-wide rules live
-in `.grok/rules/uml-viewer.md`.
+A **tmux** session unique to the examined project starts interactive Grok in
+that directory (`--yolo --trust --rules …` plus a launch prompt). The name is
+`uml-viewer-<project>-<hash>`, stored in `.uml-viewer/companion.edn`. On start
+it writes a hierarchical policy from that project's namespaces and regenerates
+the IR. Type there; Esc is the real TUI interrupt. Closing the diagram kills
+**only that** tmux session and its Terminal window — other Grok agents stay
+up. If that Grok process dies, tmux respawns it in the same pane. That
+instance also runs `clj -M:crap`, `clj -M:mutate`, and IR generate after later
+changes. Project-wide rules live in `.grok/rules/uml-viewer.md`.
 
 Prefer `./uml` in the examined project (from `get-uml-viewer`). Aliases
 `:uml-viewer` / `:uml-viewer-restart` still work if present.
@@ -97,7 +98,8 @@ leaves a diagram with no agent. The companion recycles the window by
 writing `:quit-for-restart` to `.uml-viewer/to-viewer.edn`, waiting for
 the JVM to exit, then `./uml --restart`. The new JVM restores depth, pan,
 zoom, and which proposal was showing (`.uml-viewer/session.edn`). Do not
-SIGKILL. Closing the window still kills Grok.
+SIGKILL. Closing the window kills only that project's companion, not other
+Grok agents.
 
 On a fresh start the canvas stays blank until the companion sends `:display`,
 with **Waiting for agent to create diagram.** `R` reloads the current EDN
@@ -165,8 +167,9 @@ Rename or move of a function is a new form: overlay does not match old names.
   **Ctrl+0** restores 100%. Zoom keeps the view center still.
 - **Regen** in the inspector asks the companion to rewrite policy and IR
   (see [Companion mailbox](#companion-mailbox)).
-- `R` reloads the current EDN (the watcher also reloads on save). Overlay
-  re-reads `.metrics/` on the next load.
+- `R` reloads the current EDN. The watcher also reloads on save, and when
+  `.metrics/` snapshots change. An open class card updates with the new
+  numbers.
 - `Esc` on the class card closes it (it does not quit the viewer). Closing
   the main window exits the app.
 
@@ -368,7 +371,9 @@ does this itself on `to-viewer.edn`. The companion must pop each
 `to-agent.edn` command as it handles it.
 
 `.uml-viewer/session.edn` is the last view (depth, pan, zoom, proposal) written
-on `:quit-for-restart` and restored by `--restart`.
+on `:quit-for-restart` and restored by `--restart`. `.uml-viewer/companion.edn`
+records this viewer's tmux session and Terminal window id so close/kill never
+touches another project's agent.
 
 | `:op` | Meaning |
 |-------|---------|

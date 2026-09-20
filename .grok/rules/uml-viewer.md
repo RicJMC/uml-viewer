@@ -36,7 +36,9 @@ The diagram is already on screen.
   changes. To restart it: write `:quit-for-restart` to
   `.uml-viewer/to-viewer.edn`, wait for the JVM to exit, then
   `./uml --restart`. Do not pass `--restart` except through that
-  wrapper. Do not SIGKILL; closing the window still kills Grok.
+  wrapper. Do not SIGKILL. Closing the viewer kills only this
+  companion's tmux session, not other Grok agents. If this Grok
+  process dies, tmux respawns it in the same pane.
 
 Do not commit or push unless asked. Esc interrupts a turn in this terminal;
 do not kill the process on interrupt.

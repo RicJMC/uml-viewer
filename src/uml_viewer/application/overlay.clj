@@ -60,6 +60,18 @@
    {:crap (or (load-crap root) {})
     :mutate (or (load-mutate root) {})}))
 
+(defn metrics-stamp
+  "Fingerprint of `.metrics` snapshot files (CRAP and mutation)."
+  [root]
+  (let [crap (io/file root ".metrics" "crap.edn")
+        files (cond-> []
+                (.isFile crap) (conj crap)
+                true (into (or (mutate-files root) [])))]
+    (->> files
+         (map (fn [f] [(.getPath f) (.lastModified f) (.length f)]))
+         sort
+         vec)))
+
 (defn- form-name [id]
   (when id
     (cond

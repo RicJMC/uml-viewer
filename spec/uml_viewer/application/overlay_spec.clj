@@ -90,4 +90,21 @@
                                        :classes [{:id :a :name "A"}]}]
                            :edges []})
           painted (overlay/apply-metrics d {:crap {} :mutate {}})]
-      (should= d painted))))
+      (should= d painted)))
+
+  (it "stamps metrics files so a rewrite is visible"
+    (let [root (.getCanonicalPath (io/file "target" (str "overlay-stamp-" (System/nanoTime))))
+          crap-dir (io/file root ".metrics")]
+      (.mkdirs crap-dir)
+      (try
+        (should= [] (overlay/metrics-stamp root))
+        (spit (io/file crap-dir "crap.edn") (pr-str {:entries []}))
+        (let [a (overlay/metrics-stamp root)]
+          (should (seq a))
+          (spit (io/file crap-dir "crap.edn")
+                (pr-str {:entries [{:name "go" :namespace "demo.x"
+                                    :complexity 2 :coverage 10.0 :crap 9.0}]}))
+          (should-not= a (overlay/metrics-stamp root)))
+        (finally
+          (doseq [f (reverse (file-seq (io/file root)))]
+            (io/delete-file f true)))))))

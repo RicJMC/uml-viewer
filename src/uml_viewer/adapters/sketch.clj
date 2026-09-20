@@ -77,8 +77,9 @@
        "Do not start the viewer on launch; it reloads EDN when the file mtime\n"
        "changes. To restart it: write :quit-for-restart, wait for the JVM to\n"
        "exit, then ./uml --restart. Do not pass --restart except through that\n"
-       "wrapper (or :uml-viewer-restart). Do not SIGKILL; closing the window\n"
-       "still kills Grok.\n"
+       "wrapper (or :uml-viewer-restart). Do not SIGKILL. Closing the viewer\n"
+       "kills only this companion's tmux session, not other Grok agents. If\n"
+       "this Grok process dies, tmux respawns it in the same pane.\n"
        "Do not commit or push unless asked.\n"))
 
 (def launch-prompt
@@ -101,7 +102,24 @@
                        candidates))
         "grok")))
 
-(def session-name "uml-viewer-grok")
+(defonce !session-name (atom nil))
+
+(defn session-id
+  "Tmux session unique to this project directory."
+  [cwd]
+  (let [path (.getCanonicalPath (io/file (or cwd ".")))
+        base (-> (.getName (io/file path))
+                 (str/replace #"[^A-Za-z0-9_-]" "-"))
+        h (Integer/toHexString (hash path))]
+    (str "uml-viewer-" base "-" h)))
+
+(defn current-session
+  "Session name for this project, from companion.edn or the live atom."
+  ([] (current-session (System/getProperty "user.dir")))
+  ([root]
+   (or (:session (mailbox/read-companion root))
+       @!session-name
+       (session-id root))))
 
 (defn tmux!
   "Run tmux with `args`. Returns the process exit code (1 if tmux is missing)."
@@ -121,48 +139,52 @@
     (str "{" r ", " g ", " b "}")))
 
 (defn new-session-args
-  [cwd]
-  ["new-session" "-d" "-s" session-name "-c" cwd
-   "-e" "GROK_THEME=terminal"
-   "-e" "GROK_TERMINAL_THEME=1"
-   "-e" "COLORTERM=truecolor"
-   (grok-executable) "--yolo" "--trust" "--rules" standing-rules
-   launch-prompt
-   ";" "set-option" "status" "off"])
+  ([cwd] (new-session-args cwd (session-id cwd)))
+  ([cwd session]
+   ["new-session" "-d" "-s" session "-c" cwd
+    "-e" "GROK_THEME=terminal"
+    "-e" "GROK_TERMINAL_THEME=1"
+    "-e" "COLORTERM=truecolor"
+    (grok-executable) "--yolo" "--trust" "--rules" standing-rules
+    launch-prompt]))
 
 (defn kill-session-args
-  []
-  ["kill-session" "-t" session-name])
+  ([] (kill-session-args (current-session)))
+  ([session]
+   ["kill-session" "-t" session]))
 
 (def wake-message
   "You have mail from the viewer. If idle, read .uml-viewer/to-agent.edn.")
 
 (defn notify-steps
   "SwarmForge-style wake-up: literal text, pause, CR, pause, LF."
-  []
-  [["send-keys" "-t" session-name "-l" wake-message]
-   [:sleep 150]
-   ["send-keys" "-t" session-name "C-m"]
-   [:sleep 50]
-   ["send-keys" "-t" session-name "C-j"]])
+  ([] (notify-steps (current-session)))
+  ([session]
+   [["send-keys" "-t" session "-l" wake-message]
+    [:sleep 150]
+    ["send-keys" "-t" session "C-m"]
+    [:sleep 50]
+    ["send-keys" "-t" session "C-j"]]))
 
 (defn notify-agent!
   "Wake the companion Grok session. Returns false if tmux/session is missing."
-  []
-  (if-not (zero? (tmux! "has-session" "-t" session-name))
-    false
-    (do
-      (doseq [step (notify-steps)]
-        (if (= :sleep (first step))
-          (Thread/sleep (long (second step)))
-          (apply tmux! step)))
-      true)))
+  ([] (notify-agent! (System/getProperty "user.dir")))
+  ([root]
+   (let [session (current-session root)]
+     (if-not (zero? (tmux! "has-session" "-t" session))
+       false
+       (do
+         (doseq [step (notify-steps session)]
+           (if (= :sleep (first step))
+             (Thread/sleep (long (second step)))
+             (apply tmux! step)))
+         true)))))
 
 (defn request-agent!
   "Queue `op` for the companion and wake Grok. Returns {:cmd :woke?}."
   [root op extra]
   (let [cmd (mailbox/write-command! (mailbox/to-agent root) op extra)]
-    {:cmd cmd :woke? (notify-agent!)}))
+    {:cmd cmd :woke? (notify-agent! root)}))
 
 (defn request-regen!
   "Queue a :regen command and wake Grok. Returns {:cmd :woke?}."
@@ -182,45 +204,51 @@
         (request-agent! root :context {:context :real}))))
   state)
 
-(def terminal-title "Grok")
+(defn terminal-title
+  ([] (terminal-title (current-session)))
+  ([session]
+   (or session "UML Grok")))
 
 (defonce !terminal-window-id (atom nil))
 
 (defn attach-command
-  []
-  (str "tmux attach -t " session-name "; exit"))
+  ([] (attach-command (current-session)))
+  ([session]
+   (str "tmux attach -t " session "; exit")))
 
 (defn osascript
   "AppleScript that opens a Terminal window on `shell-cmd`, painted like the diagram.
   Raises only that window, not every Terminal window. Returns the new window id."
-  [shell-cmd]
-  (str "tell application \"Terminal\"\n"
-       "launch\n"
-       "set grokTab to do script " (pr-str shell-cmd) "\n"
-       "set background color of grokTab to " (applescript-rgb draw/bg) "\n"
-       "set normal text color of grokTab to " (applescript-rgb draw/ink) "\n"
-       "set bold text color of grokTab to " (applescript-rgb draw/gold) "\n"
-       "set cursor color of grokTab to " (applescript-rgb draw/gold) "\n"
-       "set font name of grokTab to \"Menlo\"\n"
-       "set font size of grokTab to 13\n"
-       "set custom title of grokTab to \"" terminal-title "\"\n"
-       "set title displays custom title of grokTab to true\n"
-       "set title displays device name of grokTab to false\n"
-       "set title displays shell path of grokTab to false\n"
-       "set title displays settings name of grokTab to false\n"
-       "set winID to id of front window\n"
-       "end tell\n"
-       "tell application \"System Events\"\n"
-       "tell process \"Terminal\"\n"
-       "try\n"
-       "perform action \"AXRaise\" of (first window whose name contains \"" terminal-title "\")\n"
-       "end try\n"
-       "end tell\n"
-       "end tell\n"
-       "return winID"))
+  ([shell-cmd] (osascript shell-cmd (current-session)))
+  ([shell-cmd session]
+   (let [title (terminal-title session)]
+     (str "tell application \"Terminal\"\n"
+          "launch\n"
+          "set grokTab to do script " (pr-str shell-cmd) "\n"
+          "set background color of grokTab to " (applescript-rgb draw/bg) "\n"
+          "set normal text color of grokTab to " (applescript-rgb draw/ink) "\n"
+          "set bold text color of grokTab to " (applescript-rgb draw/gold) "\n"
+          "set cursor color of grokTab to " (applescript-rgb draw/gold) "\n"
+          "set font name of grokTab to \"Menlo\"\n"
+          "set font size of grokTab to 13\n"
+          "set custom title of grokTab to \"" title "\"\n"
+          "set title displays custom title of grokTab to true\n"
+          "set title displays device name of grokTab to false\n"
+          "set title displays shell path of grokTab to false\n"
+          "set title displays settings name of grokTab to false\n"
+          "set winID to id of front window\n"
+          "end tell\n"
+          "tell application \"System Events\"\n"
+          "tell process \"Terminal\"\n"
+          "try\n"
+          "perform action \"AXRaise\" of (first window whose name contains \"" title "\")\n"
+          "end try\n"
+          "end tell\n"
+          "end tell\n"
+          "return winID"))))
 
 (defn close-terminal-script
-  "AppleScript that closes the Grok Terminal window. Does not launch Terminal."
+  "AppleScript that closes only this viewer's Terminal window by id."
   ([] (close-terminal-script nil))
   ([win-id]
    (str "tell application \"System Events\"\n"
@@ -231,13 +259,6 @@
           (str "try\n"
                "close (first window whose id is " win-id ") saving no\n"
                "end try\n"))
-        "repeat with w in (get windows)\n"
-        "try\n"
-        "if custom title of selected tab of w is \"" terminal-title "\" then\n"
-        "close w saving no\n"
-        "end if\n"
-        "end try\n"
-        "end repeat\n"
         "end tell")))
 
 (defn run-osascript
@@ -257,26 +278,56 @@
   (run-osascript (close-terminal-script @!terminal-window-id))
   (reset! !terminal-window-id nil))
 
+(defn- kill-companion-session!
+  "Drop this project's tmux session only. Unhook respawn so the pane stays dead."
+  [session]
+  (when (seq session)
+    (tmux! "set-hook" "-t" session "-u" "pane-died")
+    (apply tmux! (kill-session-args session))))
+
+(defn- arm-respawn!
+  "If Grok dies, tmux restarts that pane only — not other agents."
+  [session]
+  (let [pane (str session ":0.0")]
+    (tmux! "set-option" "-p" "-t" pane "remain-on-exit" "on")
+    (tmux! "set-hook" "-t" session "pane-died" "respawn-pane -k")
+    (tmux! "set-option" "-t" session "status" "off")))
+
 (defn open-in-terminal!
-  "Start grok in tmux session uml-viewer-grok and attach a Terminal window."
+  "Start this project's companion Grok in its own tmux session."
   ([] (open-in-terminal! (System/getProperty "user.dir")))
   ([cwd]
-   (apply tmux! (kill-session-args))
-   (let [code (apply tmux! (new-session-args cwd))]
-     (when-not (zero? code)
-       (binding [*out* *err*]
-         (println "UML viewer: could not start tmux session" session-name))))
-   (let [script (osascript (attach-command))
-         out (run-osascript script)
-         win-id (re-find #"\d+" out)]
-     (reset! !terminal-window-id win-id)
-     {:script script :session session-name :window-id win-id})))
+   (let [session (session-id cwd)
+         previous (:session (mailbox/read-companion cwd))]
+     (reset! !session-name session)
+     (when (and previous (not= previous session))
+       (kill-companion-session! previous))
+     (kill-companion-session! session)
+     (let [code (apply tmux! (new-session-args cwd session))]
+       (when-not (zero? code)
+         (binding [*out* *err*]
+           (println "UML viewer: could not start tmux session" session)))
+       (when (zero? code)
+         (arm-respawn! session)))
+     (let [script (osascript (attach-command session) session)
+           out (run-osascript script)
+           win-id (re-find #"\d+" out)]
+       (reset! !terminal-window-id win-id)
+       (mailbox/write-companion! cwd {:session session :window-id win-id})
+       {:script script :session session :window-id win-id}))))
 
 (defn shutdown-children!
-  "Kill the grok tmux session and close its Terminal window."
-  []
-  (apply tmux! (kill-session-args))
-  (close-terminal-window!))
+  "Kill only this viewer's tmux session and its Terminal window."
+  ([] (shutdown-children! (System/getProperty "user.dir")))
+  ([root]
+   (let [info (mailbox/read-companion root)
+         session (or (:session info) @!session-name)
+         win (or (:window-id info) @!terminal-window-id)]
+     (kill-companion-session! session)
+     (when win
+       (run-osascript (close-terminal-script win)))
+     (reset! !terminal-window-id nil)
+     (reset! !session-name nil))))
 
 (defn- live? [applet]
   (boolean

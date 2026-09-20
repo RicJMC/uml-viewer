@@ -291,5 +291,5 @@
        :esc (if (or (seq (:focus state)) (:open-layer state))
               (back state)
               (assoc state :selected nil))
-       :r (-> state (dissoc :waiting) (assoc :mtime 0))
+       :r (-> state (dissoc :waiting) (assoc :mtime 0 :metrics-stamp nil))
        state))))
