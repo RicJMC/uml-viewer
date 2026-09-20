@@ -113,6 +113,8 @@
         h (Integer/toHexString (hash path))]
     (str "uml-viewer-" base "-" h)))
 
+(def legacy-session "uml-viewer-grok")
+
 (defn current-session
   "Session name for this project, from companion.edn or the live atom."
   ([] (current-session (System/getProperty "user.dir")))
@@ -128,6 +130,23 @@
     (let [p (.start (ProcessBuilder. (into-array String (cons "tmux" args))))]
       (.waitFor p))
     (catch Exception _ 1)))
+
+(defn session-candidates
+  "Names to try, unique first, then the pre-isolation session."
+  [root]
+  (->> [(:session (mailbox/read-companion root))
+        @!session-name
+        (when root (session-id root))
+        legacy-session]
+       (filter seq)
+       distinct
+       vec))
+
+(defn live-session
+  "First candidate that tmux currently has, or nil."
+  [root]
+  (first (filter #(zero? (tmux! "has-session" "-t" %))
+                 (session-candidates root))))
 
 (defn rgb-16
   "Terminal.app AppleScript colors are 16-bit (0–65535)."
@@ -170,15 +189,15 @@
   "Wake the companion Grok session. Returns false if tmux/session is missing."
   ([] (notify-agent! (System/getProperty "user.dir")))
   ([root]
-   (let [session (current-session root)]
-     (if-not (zero? (tmux! "has-session" "-t" session))
-       false
-       (do
-         (doseq [step (notify-steps session)]
-           (if (= :sleep (first step))
-             (Thread/sleep (long (second step)))
-             (apply tmux! step)))
-         true)))))
+   (if-let [session (live-session root)]
+     (do
+       (reset! !session-name session)
+       (doseq [step (notify-steps session)]
+         (if (= :sleep (first step))
+           (Thread/sleep (long (second step)))
+           (apply tmux! step)))
+       true)
+     false)))
 
 (defn request-agent!
   "Queue `op` for the companion and wake Grok. Returns {:cmd :woke?}."
@@ -763,13 +782,27 @@
   (exit-app!)
   state)
 
+(defn- remember-companion!
+  "On --restart, bind this JVM to the existing tmux session so mail can wake it."
+  [root]
+  (let [info (mailbox/read-companion root)
+        session (live-session root)]
+    (when session
+      (reset! !session-name session)
+      (when-let [win (:window-id info)]
+        (reset! !terminal-window-id win))
+      (mailbox/write-companion! root (merge (or info {}) {:session session}))
+      session)))
+
 (defn start!
   ([path source-impl]
    (start! path source-impl false))
   ([path source-impl restart?]
    (swap! !bridge assoc :source source-impl)
-   (when-not restart?
-     (open-in-terminal! (overlay/metrics-root path)))
+   (let [root (overlay/metrics-root path)]
+     (if restart?
+       (remember-companion! root)
+       (open-in-terminal! root)))
    (q/sketch
     :title "UML viewer"
     :size [window-width window-height]

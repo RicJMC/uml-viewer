@@ -742,13 +742,73 @@
     (should= [0 65535 257] (sketch/rgb-16 [0 255 1])))
 
   (it "skips a new agent on restart"
-    (let [opened (atom 0)]
+    (let [opened (atom 0)
+          remembered (atom 0)]
       (with-redefs [q/sketch (fn [& _] :applet)
-                    uml-viewer.adapters.sketch/open-in-terminal! (fn [& _] (swap! opened inc))]
+                    uml-viewer.adapters.sketch/open-in-terminal! (fn [& _] (swap! opened inc))
+                    uml-viewer.adapters.sketch/remember-companion! (fn [_] (swap! remembered inc))]
         (should= :applet (sketch/start! "doc.edn" :src true))
         (should= 0 @opened)
+        (should= 1 @remembered)
         (sketch/start! "doc.edn" :src)
-        (should= 1 @opened))))
+        (should= 1 @opened)
+        (should= 1 @remembered))))
+
+  (it "wakes the legacy grok session when the per-project session is missing"
+    (let [root (str (System/getProperty "java.io.tmpdir")
+                    "/uv-wake-" (System/nanoTime))
+          calls (atom [])]
+      (.mkdirs (java.io.File. root))
+      (reset! sketch/!session-name nil)
+      (with-redefs [uml-viewer.adapters.sketch/tmux!
+                    (fn [& args]
+                      (swap! calls conj (vec args))
+                      (cond
+                        (not= "has-session" (first args)) 0
+                        (= sketch/legacy-session (last args)) 0
+                        :else 1))]
+        (should (sketch/notify-agent! root))
+        (should (some #(= ["send-keys" "-t" sketch/legacy-session "-l" sketch/wake-message] %)
+                      @calls))
+        (should= sketch/legacy-session @sketch/!session-name))))
+
+  (it "wakes the companion session instead of the legacy name when it is live"
+    (let [root (str (System/getProperty "java.io.tmpdir")
+                    "/uv-wake2-" (System/nanoTime))
+          calls (atom [])]
+      (.mkdirs (java.io.File. root))
+      (mailbox/write-companion! root {:session "uml-viewer-mine-abc"})
+      (reset! sketch/!session-name nil)
+      (with-redefs [uml-viewer.adapters.sketch/tmux!
+                    (fn [& args]
+                      (swap! calls conj (vec args))
+                      (cond
+                        (not= "has-session" (first args)) 0
+                        (= "uml-viewer-mine-abc" (last args)) 0
+                        :else 1))]
+        (should (sketch/notify-agent! root))
+        (should (some #(= ["send-keys" "-t" "uml-viewer-mine-abc" "-l" sketch/wake-message] %)
+                      @calls))
+        (should-not (some #(and (= "send-keys" (first %))
+                                (some #{sketch/legacy-session} %))
+                          @calls)))))
+
+  (it "on restart binds the live tmux session so later mail can wake it"
+    (let [root (str (System/getProperty "java.io.tmpdir")
+                    "/uv-remember-" (System/nanoTime))]
+      (.mkdirs (java.io.File. root))
+      (reset! sketch/!session-name nil)
+      (reset! sketch/!terminal-window-id nil)
+      (with-redefs [uml-viewer.adapters.sketch/tmux!
+                    (fn [& args]
+                      (if (and (= "has-session" (first args))
+                               (= sketch/legacy-session (last args)))
+                        0
+                        1))]
+        (should= sketch/legacy-session (call 'remember-companion! root))
+        (should= sketch/legacy-session @sketch/!session-name)
+        (should= sketch/legacy-session
+                 (:session (mailbox/read-companion root))))))
 
   (it "kills only this project's tmux session and its Terminal window"
     (let [root (str (System/getProperty "java.io.tmpdir")
