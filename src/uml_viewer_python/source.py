@@ -4,6 +4,7 @@ from .syntax import parse_module, source_records
 
 
 def locate(root, prefix, namespace, name):
+    root = root.resolve()
     if prefix and namespace != prefix and not namespace.startswith(prefix + "."):
         return None
     relative = namespace[len(prefix) :].lstrip(".") if prefix else namespace

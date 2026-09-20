@@ -60,7 +60,9 @@ class MeasurementTest(unittest.TestCase):
     def test_measured_scores_and_real_mutation_results(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            project = root / "project"
+            # A surrounding checkout must not change the recorded pytest IDs.
+            (root / "pyproject.toml").write_text("[tool.pytest.ini_options]\n")
+            project = root / "project with spaces"
             package = project / "sample"
             package.mkdir(parents=True)
             (package / "__init__.py").write_text("")

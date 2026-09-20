@@ -1,6 +1,7 @@
 """Measure tests and mutations in a copy of a Python project."""
 
 import argparse
+import importlib
 import json
 import os
 import shutil
@@ -38,8 +39,6 @@ def arguments():
     mode.add_argument("--resume", action="store_true")
     mode.add_argument("--retry-baseline", action="store_true")
     options = parser.parse_args()
-    for name in ("project", "work", "output"):
-        setattr(options, name, getattr(options, name).resolve())
     validate_paths(options)
     if (
         options.mutation_limit < 0
@@ -50,6 +49,8 @@ def arguments():
 
 
 def validate_paths(options):
+    for name in ("project", "work", "output"):
+        setattr(options, name, getattr(options, name).resolve())
     if not options.project.is_dir():
         raise ValueError("Project must be a directory")
     for destination in (options.work, options.output):
@@ -99,6 +100,11 @@ def prepare_checkout(options, hashes):
 
 
 def test_environment(options, checkout):
+    try:
+        importlib.import_module("coverage.tracer")
+        coverage_core = "ctrace"
+    except ImportError:
+        coverage_core = "pytrace"
     environment = dict(os.environ)
     environment.update(
         {
@@ -106,6 +112,8 @@ def test_environment(options, checkout):
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
             "PYTHONUNBUFFERED": "1",
             "COVERAGE_FILE": str(options.work / ".coverage"),
+            # Per-test contexts require the tracing core on Python 3.14+.
+            "COVERAGE_CORE": coverage_core,
             "UML_SOURCE": str(checkout / options.source),
             "TMPDIR": str(options.work),
             "XDG_CACHE_HOME": str(options.work / "cache"),
@@ -123,6 +131,7 @@ def baseline_report(options, checkout, environment, hashes):
         "-B",
         "-m",
         "uml_viewer_python.coverage_runner",
+        "--rootdir=" + str(checkout),
         "-q",
         "-p",
         "no:cacheprovider",
@@ -181,6 +190,7 @@ def run_mutant(mutant, records, checkout, environment, logfile, options):
         "-B",
         "-m",
         "pytest",
+        "--rootdir=" + str(checkout),
         "-q",
         "-x",
         "-p",

@@ -30,6 +30,7 @@ def parse_module(path, root, prefix):
 
 
 def load_modules(root, prefix):
+    root = root.resolve()
     ignored = {".git", ".venv", "venv", "__pycache__", "node_modules"}
     modules = {}
     for path in sorted(root.rglob("*.py")):

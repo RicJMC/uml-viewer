@@ -92,6 +92,27 @@ class PythonAdapterTests(unittest.TestCase):
         span = locate(self.root, "demo", "demo.sample.Outer.Inner", "run")
         self.assertEqual(span["line"], 3)
 
+    def test_linked_root_preserves_source_lookup_and_rejects_outside_files(self):
+        from uml_viewer_python.syntax import load_modules
+
+        self.add("sample.py", "class Sample:\n    def run(self): pass\n")
+        with tempfile.TemporaryDirectory() as directory:
+            alias = Path(directory) / "linked package"
+            try:
+                alias.symlink_to(self.root, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"Directory symlinks are unavailable: {error}")
+            modules = load_modules(alias, "demo")
+            self.assertIn("demo.sample", modules)
+            span = locate(alias, "demo", "demo.sample.Sample", "run")
+            self.assertEqual(span["line"], 2)
+            outside = Path(directory) / "outside.py"
+            outside.write_text("class Outside: pass\n")
+            (self.root / "outside.py").symlink_to(outside)
+            with self.assertRaisesRegex(ValueError, "symlink leaves scan root"):
+                load_modules(alias, "demo")
+            self.assertIsNone(locate(alias, "demo", "demo.outside.Outside", ""))
+
     def test_external_dependency_cannot_collide_with_local_module(self):
         self.add("json.py", "import json\n")
         graph = adapter.scan(self.root, "demo")

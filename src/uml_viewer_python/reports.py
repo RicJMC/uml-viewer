@@ -80,6 +80,7 @@ def publish(report, destination, original_source):
 
 
 def metrics_status(directory, root):
+    root = root.resolve()
     report_path = directory / "report.json"
     if (directory / "updating").exists():
         return {"status": "updating", "report": str(report_path)}
