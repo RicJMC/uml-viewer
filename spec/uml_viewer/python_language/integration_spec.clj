@@ -3,6 +3,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [speclj.core :refer :all]
+            [quil.core :as q]
             [uml-viewer.graph :as graph]
             [uml-viewer.source :as source]
             [uml-viewer.python-language.graph-python :as python-graph]
@@ -62,6 +63,38 @@
       (should (str/includes? html "class='hl'")))))
 
 (describe "Verified quality snapshots"
+  (it "refreshes Python scores when publication becomes valid or incomplete"
+    (let [root (io/file "target" (str "python-refresh-" (System/nanoTime)))
+          metrics (io/file root ".metrics")
+          source (io/file root "sample")
+          path (io/file root "diagram.edn")
+          component {:id :worker :name "Worker" :ns "sample.worker" :ops [{:name "run"}]}
+          score (fn [state] (get-in state [:doc :classes 0 :crap :mu]))]
+      (.mkdirs metrics)
+      (.mkdirs source)
+      (try
+        (spit path (pr-str {:hierarchical true :metrics-mode :verified
+                           :source-root (.getCanonicalPath source)
+                           :classes [component] :edges []}))
+        (spit (io/file metrics "crap.edn")
+              (pr-str {:entries [{:namespace "sample.worker" :name "run"
+                                  :complexity 2 :coverage 100.0 :crap 2.0}]}))
+        (let [unpublished (document/load-path (.getPath path))]
+          (should-be-nil (score unpublished))
+          (spit (io/file metrics "manifest.edn")
+                (pr-str {:source-root (.getCanonicalPath source)
+                         :source-files [] :python-files []}))
+          (let [published (document/maybe-reload unpublished)]
+            (should= 2.0 (score published))
+            (spit (io/file metrics "updating") "publishing")
+            (let [updating (document/maybe-reload published)]
+              (should-be-nil (score updating))
+              (io/delete-file (io/file metrics "updating"))
+              (should= 2.0 (score (document/maybe-reload updating))))))
+        (finally
+          (doseq [file (reverse (file-seq root))]
+            (io/delete-file file true))))))
+
   (it "carries weighted coverage and partial mutation state through the renderer"
     (let [component {:id :logic.Worker :name "Worker" :ns "sample.logic.Worker"
                      :metrics-status "current" :ops [{:name "run" :text "run(self)"}]}
@@ -102,6 +135,19 @@
       (should= 0.1 (:coverage painted)))))
 
 (describe "Standalone Python startup"
+  (it "does not discover or remember a companion during standalone startup"
+    (let [previous @sketch/!bridge
+          commands (atom [])]
+      (try
+        (swap! sketch/!bridge assoc :standalone? true)
+        (with-redefs [q/sketch (fn [& _] :viewer)
+                      sketch/tmux! (fn [& arguments]
+                                     (swap! commands conj arguments)
+                                     1)]
+          (should= :viewer (sketch/start! "target/standalone.edn" :python true)))
+        (should= [] @commands)
+        (finally (reset! sketch/!bridge previous)))))
+
   (it "queues menu actions without waking a companion in standalone mode"
     (let [root (io/file "target" (str "python-mail-" (System/nanoTime)))
           previous @sketch/!bridge
@@ -109,7 +155,7 @@
           target {:id :book.Book :ns "library.book.Book" :kind :class}]
       (try
         (swap! sketch/!bridge assoc :standalone? true)
-        (with-redefs [sketch/notify-agent! (fn [] (swap! notifications inc) true)]
+        (with-redefs [sketch/notify-agent! (fn [& _] (swap! notifications inc) true)]
           (doseq [operation [:context :refresh-crap :refresh-mutate
                             :refresh-mutate-all :omit]]
             (let [result (sketch/request-agent! root operation {:target target})]

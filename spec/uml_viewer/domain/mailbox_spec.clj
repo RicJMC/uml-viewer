@@ -17,6 +17,14 @@
         (should= 1.1 (:zoom snap))
         (should= 12 (:cam-x snap)))))
 
+  (it "round-trips companion session identity"
+    (let [root (tmp-root)]
+      (mailbox/write-companion! root {:session "uml-viewer-proj-ab" :window-id "42"})
+      (let [info (mailbox/read-companion root)]
+        (should= "uml-viewer-proj-ab" (:session info))
+        (should= "42" (:window-id info))
+        (should= "companion.edn" mailbox/companion-name))))
+
   (it "writes commands atomically with rising ids"
     (let [root (tmp-root)
           f (mailbox/to-agent root)

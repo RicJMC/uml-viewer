@@ -188,9 +188,11 @@
     (should= 0 (:mtime (events/on-key (assoc (state) :mtime 99) :r))))
 
   (it "reloads on r without waiting for the agent"
-    (let [next (events/on-key (assoc (state) :waiting true :mtime 99) :r)]
+    (let [next (events/on-key (assoc (state) :waiting true :mtime 99
+                                     :metrics-stamp [[:old 1]]) :r)]
       (should-not (:waiting next))
-      (should= 0 (:mtime next))))
+      (should= 0 (:mtime next))
+      (should-be-nil (:metrics-stamp next))))
 
   (it "pans with the arrow keys"
     (let [s (assoc (state) :scene {:size {:h 4000 :w 4000}})]
