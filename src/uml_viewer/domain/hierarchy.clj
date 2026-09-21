@@ -40,6 +40,13 @@
        (map str/capitalize)
        (str/join)))
 
+(defn- module-name
+  "Box title: last ns segment, or a proposal group's own label."
+  [c]
+  (if (:proposal-group? c)
+    (or (:name c) (node-label (:id c)))
+    (node-label (:id c))))
+
 (defn- has-descendants? [id classes]
   (let [pfx (str (name id) ".")]
     (boolean (some #(str/starts-with? (name (:id %)) pfx) classes))))
@@ -118,7 +125,7 @@
         mut (rolled-mutants classes id)
         lv (rolled-level classes id)]
     (cond-> {:id id
-             :name (or (:name leaf) (node-label id))
+             :name (node-label id)
              :drill? drill?}
       (:ns leaf) (assoc :ns (:ns leaf))
       (some? lv) (assoc :level lv)
@@ -457,7 +464,7 @@
              :hide-members true
              :contents (mapv (fn [c]
                                {:id (:id c)
-                                :name (or (:name c) (node-label (:id c)))
+                                :name (module-name c)
                                 :drill? (boolean (:drill? c))})
                              kids)}
       (:mu crap) (assoc :crap crap)
@@ -493,6 +500,7 @@
                                    (omit (:id %))
                                    (policy/omitted-id? (:id %) omit)))
                          stamped-leaves)
+         as-module (fn [c] (assoc c :name (module-name c)))
          pick (fn pick [nse]
                 (if (map? nse)
                   (let [kids (into [] (mapcat pick (:nses nse)))]
@@ -500,8 +508,9 @@
                       [(nested-group-box nse kids)]
                       []))
                   (if-let [c (get by-id nse)]
-                    [c]
-                    (filterv #(id-under? (:id %) nse) stamped-leaves))))
+                    [(as-module c)]
+                    (mapv as-module
+                          (filterv #(id-under? (:id %) nse) stamped-leaves)))))
          mk (fn [layer]
               (let [cs (into [] (mapcat pick (:nses layer)))]
                 (when (seq cs)
@@ -512,7 +521,7 @@
                 (seq extras)
                 (conj {:id :proposal.unassigned
                        :label "Unassigned"
-                       :classes extras}))
+                       :classes (mapv as-module extras)}))
          pkgs (vec (rseq pkgs))
          notice (or (:notice named) (:notice proposal) policy/proposal-notice)
          visible (into (set (map :id (mapcat :classes pkgs)))

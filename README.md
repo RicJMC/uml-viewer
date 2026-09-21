@@ -214,7 +214,8 @@ To write a policy for a project:
 8. Run `clj -M:ir` (or Regen).
 
 If `foo.bar` and `foo.bar.baz` both exist, the `bar` box lists `bar` (the
-module) and `baz` (the child). Double-click the component to open that
+module) and `baz` (the child). Module titles are the last ns segment
+(`layout`, not `engine.layout`). Double-click the component to open that
 level; double-click the `bar` module line for its class card.
 
 Wrong (invented partitions):

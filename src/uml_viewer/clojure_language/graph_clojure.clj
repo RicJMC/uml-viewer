@@ -84,7 +84,8 @@
     (keyword tail)))
 
 (defn- class-name [id]
-  (->> (str/split (name id) #"[\.\-]+")
+  "Last ns segment only — do not prefix the module with its component."
+  (->> (str/split (name (last (str/split (name id) #"\."))) #"\-")
        (remove str/blank?)
        (map str/capitalize)
        (str/join)))

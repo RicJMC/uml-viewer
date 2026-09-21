@@ -409,6 +409,25 @@
       (should-be-nil (:crap source))
       (should= {:mu 2.0 :max 3.0 :sigma 1.0} (:crap layout))))
 
+  (it "titles modules with the last ns segment, not the component prefix"
+    (let [g {:classes [{:id :engine.layout :name "EngineLayout"
+                        :ns "demo.engine.layout"}
+                       {:id :engine.route :name "EngineRoute"
+                        :ns "demo.engine.route"}]
+             :edges []}
+          pol {:title "Demo" :hierarchical true :order [:engine]}
+          doc (policy/apply-policy pol g)
+          root (hierarchy/view-at doc [])
+          inner (hierarchy/view-at doc [:engine])
+          engine (first (filter #(= :engine (:id %))
+                                (mapcat :classes (:packages root))))
+          layout (first (filter #(= :engine.layout (:id %))
+                                (mapcat :classes (:packages inner))))]
+      (should= "Engine" (:name engine))
+      (should= "Layout" (:name layout))
+      (should= "Layout" (:name (first (filter #(= :engine.layout (:id %))
+                                              (:contents engine)))))))
+
   (it "keeps arrows between classes in the same view"
     (let [g {:classes [{:id :engine :name "Engine" :ns "demo.engine"}
                        {:id :engine.layout :name "Layout" :ns "demo.engine.layout"}

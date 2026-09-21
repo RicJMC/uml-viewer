@@ -101,14 +101,14 @@
       (let [g (graph/scan (graph/lookup :clojure) dir {:prefix "demo"})
             c (first (:classes g))]
         (should= :source.clojure (:id c))
-        (should= "SourceClojure" (:name c)))))
+        (should= "Clojure" (:name c)))))
 
   (it "scans this project for Source and its Clojure impl"
     (let [g (graph/scan-project "src" {:prefix "uml-viewer"})
           by-id (into {} (map (juxt :id identity) (:classes g)))
           edges (set (map (juxt :from :to :kind) (:edges g)))]
       (should= :interface (:stereotype (by-id :source)))
-      (should= "ClojureLanguageSourceClojure"
+      (should= "SourceClojure"
                (:name (by-id :clojure-language.source-clojure)))
       (should (contains? edges [:clojure-language.source-clojure :source :implements]))
       (should (contains? edges [:application.document :engine.compose :dependency]))
