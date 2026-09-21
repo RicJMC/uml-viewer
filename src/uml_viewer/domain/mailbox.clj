@@ -9,6 +9,7 @@
 (def to-viewer-name "to-viewer.edn")
 (def to-agent-name "to-agent.edn")
 (def session-name "session.edn")
+(def companion-name "companion.edn")
 
 (defn dir [root]
   (io/file root dir-name))
@@ -21,6 +22,9 @@
 
 (defn session-file [root]
   (io/file (dir root) session-name))
+
+(defn companion-file [root]
+  (io/file (dir root) companion-name))
 
 (defn read-command
   [file]
@@ -109,4 +113,15 @@
 (defn read-session
   [root]
   (let [raw (read-command (session-file root))]
+    (when (map? raw) raw)))
+
+(defn write-companion!
+  "Remember this viewer's tmux session and Terminal window."
+  [root m]
+  (atomic-write! (companion-file root) (or m {}))
+  m)
+
+(defn read-companion
+  [root]
+  (let [raw (read-command (companion-file root))]
     (when (map? raw) raw)))

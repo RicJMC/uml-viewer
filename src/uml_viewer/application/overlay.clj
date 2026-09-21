@@ -64,6 +64,18 @@
             {:crap (if readable? (or (load-crap root) {}) {})
              :mutate (if readable? (or (load-mutate root) {}) {})}))))
 
+(defn metrics-stamp
+  "Fingerprint of score files and their publication state."
+  [root]
+  (let [snapshots (map #(io/file root ".metrics" %)
+                       ["crap.edn" "manifest.edn" "updating"])
+        files (concat (filter #(.isFile %) snapshots)
+                      (or (mutate-files root) []))]
+    (->> files
+         (map (fn [f] [(.getPath f) (.lastModified f) (.length f)]))
+         sort
+         vec)))
+
 (defn- form-name [id]
   (when id
     (cond
