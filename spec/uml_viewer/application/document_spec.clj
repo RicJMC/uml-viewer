@@ -6,6 +6,7 @@
             [uml-viewer.domain.geom :as geom]
             [uml-viewer.domain.ir :as ir]
             [uml-viewer.engine.layout :as layout]
+            [uml-viewer.domain.log :as log]
             [uml-viewer.domain.mailbox :as mailbox]))
 
 (defn state []
@@ -18,6 +19,15 @@
    :mtime 0})
 
 (describe "document"
+  (around [it]
+    (let [f (str (System/getProperty "java.io.tmpdir")
+                 "/uv-doc-log-" (System/nanoTime) ".txt")]
+      (try
+        (binding [log/*log-file* f]
+          (it))
+        (finally
+          (io/delete-file f true)))))
+
   (it "bakes edge strokes so the draw loop does not recompute splines"
     (let [scene (compose/compile-diagram
                   (ir/normalize
@@ -227,7 +237,8 @@
     (let [f (java.io.File/createTempFile "bad" ".edn")]
       (spit f "{:packages [{:classes [{}]}]}")
       (let [next (document/maybe-reload (assoc (state) :path (.getPath f) :mtime 0))]
-        (should (string? (:error next))))))
+        (should (string? (:error next)))
+        (should (re-find #"reload" (slurp log/*log-file*))))))
 
   (it "drops a detail id whose class vanished on reload"
     (let [f (java.io.File/createTempFile "uml" ".edn")]

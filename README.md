@@ -64,7 +64,7 @@ cd /path/to/the-project
 curl -fsSL https://raw.githubusercontent.com/unclebob/uml-viewer/master/scripts/get-uml-viewer -o get-uml-viewer
 chmod +x get-uml-viewer
 ./get-uml-viewer               # fetch, write ./uml, start
-./uml                          # later fresh starts
+./uml                          # later fresh starts (returns immediately)
 ./uml --restart                # companion only: new JVM, restore last view
 ```
 
@@ -73,6 +73,10 @@ chmod +x get-uml-viewer
 to the project's repo), writes `./uml`, and starts the viewer. `--install-only`
 skips the start. `UML_VIEWER_REPO_URL` and `UML_VIEWER_REF` override the clone
 source (default `master`).
+
+`./uml` and `clj -M:run` (from a terminal) return immediately; the diagram
+runs in its own JVM. Exceptions and JVM output append to
+**`uml-viewer-log.txt`** in the project directory (gitignored).
 
 A **tmux** session unique to the examined project starts interactive Grok in
 that directory (`--yolo --trust --rules …` plus a launch prompt). The name is
@@ -89,7 +93,7 @@ Prefer `./uml` in the examined project (from `get-uml-viewer`). Aliases
 
 | Command | Who | What |
 |---------|-----|------|
-| `./uml` | anyone | Fresh window. Starts the companion. Waits for `:display`. |
+| `./uml` | anyone | Fresh window in a background JVM. Starts the companion. Waits for `:display`. |
 | `./uml --restart` | **associated agent only** | New JVM, same companion. Restores the last view. |
 
 Do **not** pass `--restart` unless you are that companion recycling the
