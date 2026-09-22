@@ -358,7 +358,7 @@
           groups)))))
 
 (defn- mutant-pair [c]
-  (select-keys c [:killed :survived]))
+  (select-keys c [:killed :survived :uncovered]))
 
 (defn- layout-package [pkg origin-x origin-y edges direction rank-base]
   (let [inner (place-classes (:classes pkg) edges direction)
@@ -406,7 +406,8 @@
              :rect pack-rect
              :classes inner}
       crap (assoc :crap crap)
-      mut (assoc :killed (:killed mut) :survived (:survived mut)))))
+      mut (assoc :killed (:killed mut) :survived (:survived mut)
+                 :uncovered (:uncovered mut)))))
 
 (defn- oval-size [c]
   (let [w (max 80 (+ (* 2 pad) (text-w (:name c))))

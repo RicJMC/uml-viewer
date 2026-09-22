@@ -371,7 +371,7 @@
       (should= 9 (:killed layout))
       (should= 1 (:survived layout))))
 
-  (it "treats a child with no mutants as the worst (red) ratio"
+  (it "keeps a measured child when a sibling has no mutant counts"
     (let [g (update graph :classes
                     (fn [cs]
                       (mapv (fn [c]
@@ -386,8 +386,8 @@
                                 (mapcat :classes (:packages view))))
           layout (first (filter #(= :layout (:id %))
                                 (mapcat :classes (:packages view))))]
-      (should-be-nil (:killed source))
-      (should-be-nil (:survived source))
+      (should= 8 (:killed source))
+      (should= 0 (:survived source))
       (should= 9 (:killed layout))
       (should= 1 (:survived layout))))
 

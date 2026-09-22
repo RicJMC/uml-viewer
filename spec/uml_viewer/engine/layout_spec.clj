@@ -131,7 +131,7 @@
       (should= 1 (:killed p))
       (should= 1 (:survived p))))
 
-  (it "inherits red mutation when a child has no mutant data"
+  (it "keeps measured mutants when a child has no mutant data"
     (let [d (ir/normalize
               {:packages
                [{:id :p :label "P"
@@ -144,8 +144,8 @@
           scene (layout/layout d)
           p (first (:packages scene))]
       (should= 20.0 (get-in p [:crap :mu]))
-      (should-be-nil (:killed p))
-      (should-be-nil (:survived p))))
+      (should= 9 (:killed p))
+      (should= 1 (:survived p))))
 
   (it "inherits red CRAP when a child has no CRAP data"
     (let [d (ir/normalize

@@ -104,7 +104,7 @@
   (let [worst (reduce config/worse-mutants nil
                       (keep (fn [c]
                               (when (under-id? c id)
-                                (select-keys c [:killed :survived])))
+                                (select-keys c [:killed :survived :uncovered])))
                             classes))]
     (when (or (:killed worst) (:survived worst))
       worst)))
@@ -131,7 +131,9 @@
       (some? lv) (assoc :level lv)
       (:stereotype leaf) (assoc :stereotype (:stereotype leaf))
       crap (assoc :crap crap)
-      mut (assoc :killed (:killed mut) :survived (:survived mut))
+      mut (assoc :killed (:killed mut)
+                 :survived (:survived mut)
+                 :uncovered (:uncovered mut))
       (:coverage leaf) (assoc :coverage (:coverage leaf))
       (:ops leaf) (assoc :ops (:ops leaf))
       (:fields leaf) (assoc :fields (:fields leaf))
@@ -308,13 +310,14 @@
   (let [crap (reduce config/worse-crap nil
                      (map (fn [c] (or (:crap c) {})) classes))
         mut (reduce config/worse-mutants nil
-                    (map #(select-keys % [:killed :survived]) classes))
+                    (map #(select-keys % [:killed :survived :uncovered]) classes))
         lv (when (seq (keep :level classes))
              (apply max (keep :level classes)))]
     (cond-> dummy
       (:mu crap) (assoc :crap crap)
       (or (:killed mut) (:survived mut))
-      (assoc :killed (:killed mut) :survived (:survived mut))
+      (assoc :killed (:killed mut) :survived (:survived mut)
+             :uncovered (:uncovered mut))
       (some? lv) (assoc :level lv))))
 
 (defn- ensure-pkg-dummies [view]
@@ -452,7 +455,7 @@
   (let [id (:id group)
         crap (reduce config/worse-crap nil (keep :crap kids))
         mut (reduce config/worse-mutants nil
-                    (map #(select-keys % [:killed :survived]) kids))
+                    (map #(select-keys % [:killed :survived :uncovered]) kids))
         lv (when (seq (keep :level kids))
              (apply max (keep :level kids)))]
     (cond-> {:id id
@@ -469,7 +472,8 @@
                              kids)}
       (:mu crap) (assoc :crap crap)
       (or (:killed mut) (:survived mut))
-      (assoc :killed (:killed mut) :survived (:survived mut))
+      (assoc :killed (:killed mut) :survived (:survived mut)
+             :uncovered (:uncovered mut))
       (some? lv) (assoc :level lv))))
 
 (defn proposal-view

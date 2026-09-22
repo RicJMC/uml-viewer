@@ -114,7 +114,7 @@
       (should= good (config/worse-mutants good nil))
       (should= bad (config/worse-mutants nil bad))))
 
-  (it "treats a class with no mutant data as worse than any measured ratio"
+  (it "keeps a measured ratio when the other class has no mutant data"
     (let [good {:killed 9 :survived 1}]
-      (should= {} (config/worse-mutants good {}))
-      (should= {} (config/worse-mutants {} good)))))
+      (should= good (config/worse-mutants good {}))
+      (should= good (config/worse-mutants {} good)))))

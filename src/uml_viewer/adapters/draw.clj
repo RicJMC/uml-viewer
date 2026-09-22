@@ -467,6 +467,13 @@
   (q/text "Click a component for its card.\nDouble-click a component to open it.\nEsc (or ←) goes up a level.\nScroll to pan; Shift-scroll for horizontal.\nCtrl+/− zoom 10%; Ctrl+0 resets.\nR reloads.\nClick the real diagram above Proposals,\nor a proposal to show it."
           (+ x 16) y))
 
+(defn- mutation-line [m]
+  (when-let [s (layout/format-mutants (:killed m) (:survived m))]
+    (let [u (:uncovered m)]
+      (if (and u (pos? u))
+        (str s "   " (long u) " uncovered")
+        s))))
+
 (defn- draw-sidebar-class [x y scene id]
   (when-let [c (hit/class-by-id scene id)]
     (q/text-align :left :top)
@@ -478,16 +485,28 @@
               (str "package  " (name p))
               "foreign")
             (+ x 16) (+ y 18))
-    (when (some? (:level c))
-      (rgb muted)
-      (q/text (str "Level " (:level c)) (+ x 16) (+ y 36)))
-    (when-let [s (layout/format-crap (:crap c))]
-      (rgb gold)
-      (q/text s (+ x 16) (+ y 54)))
-    (rgb ink)
-    (q/text (str/join "\n" (keep :text (filter #(#{:field :op} (:kind %))
-                                               (:lines c))))
-            (+ x 16) (+ y 78))))
+    (let [y (if (some? (:level c))
+              (do
+                (rgb muted)
+                (q/text (str "Level " (:level c)) (+ x 16) (+ y 36))
+                (+ y 54))
+              (+ y 36))]
+      (let [y (if-let [s (layout/format-crap (:crap c))]
+                (do
+                  (rgb gold)
+                  (q/text s (+ x 16) y)
+                  (+ y 18))
+                y)
+            y (if-let [s (mutation-line c)]
+                (do
+                  (rgb muted)
+                  (q/text s (+ x 16) y)
+                  (+ y 18))
+                y)]
+        (rgb ink)
+        (q/text (str/join "\n" (keep :text (filter #(#{:field :op} (:kind %))
+                                                   (:lines c))))
+                (+ x 16) y)))))
 
 (defn- draw-sidebar-package [x y scene id]
   (when-let [p (hit/package-by-id scene id)]
@@ -495,14 +514,23 @@
     (q/text-size 13)
     (rgb ink)
     (q/text (:label p) (+ x 16) y)
-    (when-let [s (layout/format-crap (:crap p))]
-      (rgb gold)
-      (q/text s (+ x 16) (+ y 24)))
-    (rgb muted)
-    (q/text (str (count (filter #(= (:id p) (:package %))
-                                (:classes scene)))
-                 " classes")
-            (+ x 16) (+ y 48))))
+    (let [y (if-let [s (layout/format-crap (:crap p))]
+              (do
+                (rgb gold)
+                (q/text s (+ x 16) (+ y 24))
+                (+ y 42))
+              (+ y 24))
+          y (if-let [s (mutation-line p)]
+              (do
+                (rgb muted)
+                (q/text s (+ x 16) y)
+                (+ y 18))
+              y)]
+      (rgb muted)
+      (q/text (str (count (filter #(= (:id p) (:package %))
+                                  (:classes scene)))
+                   " classes")
+              (+ x 16) y))))
 
 (defn- draw-sidebar-error [x h err]
   (rgb [224 122 74])

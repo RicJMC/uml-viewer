@@ -114,7 +114,7 @@
 
 (defn worse-mutants
   "The killed/survived pair with the lower (worse) mutation ratio.
-  Nil is no candidate yet. A pair with no ratio counts as red."
+  Nil is no candidate yet. A pair with no ratio yields to a measured one."
   [a b]
   (cond
     (nil? a) b
@@ -123,7 +123,8 @@
     (let [ra (mutation-ratio a)
           rb (mutation-ratio b)]
       (cond
-        (nil? ra) a
-        (nil? rb) b
+        (and (nil? ra) (nil? rb)) a
+        (nil? ra) b
+        (nil? rb) a
         (< ra rb) a
         :else b))))
