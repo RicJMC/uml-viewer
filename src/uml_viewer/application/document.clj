@@ -7,6 +7,7 @@
             [uml-viewer.domain.hierarchy :as hierarchy]
             [uml-viewer.engine.hit :as hit]
             [uml-viewer.domain.ir :as ir]
+            [uml-viewer.domain.log :as log]
             [uml-viewer.domain.mailbox :as mailbox]
             [uml-viewer.application.overlay :as overlay]
             [uml-viewer.domain.policy :as policy]))
@@ -137,6 +138,7 @@
            :cam-y 0
            :mail-seen (mail-seen-at root)})
         (catch Exception e
+          (log/log-exception! e (str "load " path))
           (blank-state path (or (.getMessage e) (.getSimpleName (class e)))))))))
 
 (defn- drop-missing-detail [state]
@@ -237,6 +239,7 @@
                            :error nil)
                     drop-missing-detail))
               (catch Exception e
+                (log/log-exception! e (str "reload " path))
                 (assoc state :mtime mtime :metrics-stamp stamp
                        :error (.getMessage e))))))))))
 

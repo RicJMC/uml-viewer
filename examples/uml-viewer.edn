@@ -32,6 +32,7 @@
   {:from :application.document, :to :domain.hierarchy, :kind :dependency}
   {:from :application.events, :to :domain.policy, :kind :dependency}
   {:from :adapters.sketch, :to :adapters.draw, :kind :dependency}
+  {:from :application.document, :to :domain.log, :kind :dependency}
   {:from :application.document, :to :engine.hit, :kind :dependency}
   {:from :application.detail, :to :engine.layout, :kind :dependency}
   {:from :main.ir-generator, :to :clojure-language.graph-clojure, :kind :dependency}
@@ -42,6 +43,7 @@
   {:from :application.document, :to :domain.ir, :kind :dependency}
   {:from :adapters.draw, :to :application.detail, :kind :dependency}
   {:from :adapters.draw, :to :quil, :kind :dependency}
+  {:from :main.uml-viewer, :to :domain.log, :kind :dependency}
   {:from :adapters.draw, :to :engine.curve, :kind :dependency}
   {:from :application.events, :to :application.detail, :kind :dependency}
   {:from :adapters.source-window, :to :source, :kind :dependency}
@@ -162,6 +164,7 @@
    :stereotype nil,
    :level 0}
   {:id :domain.ir, :name "Ir", :ns "uml-viewer.domain.ir", :stereotype nil, :level 0}
+  {:id :domain.log, :name "Log", :ns "uml-viewer.domain.log", :stereotype nil, :level 0}
   {:id :domain.mailbox,
    :name "Mailbox",
    :ns "uml-viewer.domain.mailbox",
