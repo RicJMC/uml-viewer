@@ -93,9 +93,11 @@
   (+ (or killed 0) (or survived 0) (or uncovered 0)))
 
 (defn- no-sites? [{:keys [killed survived uncovered sites]}]
-  (if (some? sites)
-    (zero? sites)
-    (zero? (site-count killed survived uncovered))))
+  (let [counted (site-count killed survived uncovered)]
+    (cond
+      (pos? counted) false
+      (some? sites) (zero? sites)
+      :else true)))
 
 (defn- format-cells [{:keys [crap-mu cc coverage killed survived uncovered sites class-row?]}]
   (let [base {:crap-s (when crap-mu

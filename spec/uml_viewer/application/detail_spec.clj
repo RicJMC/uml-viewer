@@ -86,6 +86,26 @@
       (should-be-nil (detail/member-at rows (:y cls)))
       (should= "hide" (detail/member-at rows (+ (:y hide) 1)))))
 
+  (it "shows killed and survived when an older snapshot omitted sites"
+    (let [s (compose/compile-diagram
+              (ir/normalize
+                {:packages
+                 [{:id :p :label "P"
+                   :classes [{:id :w :name "WindData"
+                              :killed 5 :survived 1 :uncovered 0 :sites 0
+                              :ops [{:name "radius-bounds" :text "radius-bounds"
+                                     :killed 5 :survived 0 :uncovered 0 :sites 0}]}]}]
+                 :edges []}))
+          rows (detail/rows (detail/model s :w))
+          cls (first (filter #(and (= :stats (:kind %)) (= "WindData" (:text %))) rows))
+          op (first (filter #(= "radius-bounds" (:op-name %)) rows))]
+      (should-be-nil (:mut-note cls))
+      (should-be-nil (:mut-note op))
+      (should= "5" (:killed-s cls))
+      (should= "1" (:survived-s cls))
+      (should= "5" (:killed-s op))
+      (should= "0" (:survived-s op))))
+
   (it "does not treat untested operators as no mutation sites"
     (let [s (compose/compile-diagram
               (ir/normalize

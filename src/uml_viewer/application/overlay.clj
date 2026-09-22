@@ -112,6 +112,15 @@
        :max (* 0.1 (Math/round (* 10.0 mx)))
        :sigma (* 0.1 (Math/round (* 10.0 sd)))})))
 
+(defn- counted-sites
+  "Site total from the snapshot. Older files omit `:sites` and record
+  only killed, survived, and uncovered."
+  [form]
+  (or (:sites form)
+      (+ (or (:killed form) 0)
+         (or (:survived form) 0)
+         (or (:uncovered form) 0))))
+
 (defn- overlay-op [op crap-fn mut-fn]
   (cond-> (assoc op :text (or (:text op) (:name op)))
     crap-fn (assoc :cc (:complexity crap-fn)
@@ -120,7 +129,7 @@
     mut-fn (assoc :killed (or (:killed mut-fn) 0)
                   :survived (or (:survived mut-fn) 0)
                   :uncovered (or (:uncovered mut-fn) 0)
-                  :sites (or (:sites mut-fn) 0))
+                  :sites (counted-sites mut-fn))
     (or (:private op) (:private mut-fn)) (assoc :private true)))
 
 (defn- ops-for-class [c crap-fns mut-fns]
@@ -144,7 +153,7 @@
         killed (apply + 0 (keep :killed (vals mut-fns)))
         survived (apply + 0 (keep :survived (vals mut-fns)))
         uncovered (apply + 0 (keep :uncovered (vals mut-fns)))
-        sites (apply + 0 (keep :sites (vals mut-fns)))]
+        sites (apply + 0 (map counted-sites (vals mut-fns)))]
     (cond-> c
       (seq scores) (assoc :crap (class-crap scores)
                           :cc (apply + (map :complexity crap-fns)))

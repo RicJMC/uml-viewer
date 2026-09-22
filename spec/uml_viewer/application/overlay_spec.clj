@@ -48,6 +48,38 @@
           (doseq [f (reverse (file-seq (io/file root)))]
             (io/delete-file f true))))))
 
+  (it "derives sites from killed, survived, and uncovered when sites is absent"
+    (let [root (.getCanonicalPath (io/file "target" "overlay-legacy-sites"))
+          mut-dir (io/file root ".metrics" "mutate" "skillBoard" "gateways")]
+      (.mkdirs mut-dir)
+      (spit (io/file mut-dir "wind_data.edn")
+            (pr-str {:source "src/skillBoard/gateways/wind_data.clj"
+                     :forms [{:id "defn/radius-bounds" :killed 5 :survived 0 :uncovered 0}
+                             {:id "defn/synthetic-grid" :killed 1 :survived 5 :uncovered 0}]}))
+      (try
+        (let [metrics (overlay/load-metrics root)
+              d {:hierarchical true
+                   :classes [{:id :gateways.wind-data
+                              :name "WindData"
+                              :ns "skillBoard.gateways.wind-data"
+                              :ops [{:name "radius-bounds"}]}]
+                   :edges []}
+              painted (overlay/apply-metrics d metrics)
+              c (first (:classes painted))
+              radius (first (filter #(= "radius-bounds" (:name %)) (:ops c)))
+              grid (first (filter #(= "synthetic-grid" (:name %)) (:ops c)))]
+          (should= 6 (:killed c))
+          (should= 5 (:survived c))
+          (should= 11 (:sites c))
+          (should= 5 (:killed radius))
+          (should= 5 (:sites radius))
+          (should= 1 (:killed grid))
+          (should= 5 (:survived grid))
+          (should= 6 (:sites grid)))
+        (finally
+          (doseq [f (reverse (file-seq (io/file root)))]
+            (io/delete-file f true))))))
+
   (it "matches snapshots by class :ns after normalize"
     (let [root (.getCanonicalPath (io/file "target" "overlay-ns"))
           crap-dir (io/file root ".metrics")]
