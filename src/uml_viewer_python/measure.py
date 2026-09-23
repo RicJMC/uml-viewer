@@ -121,7 +121,13 @@ def test_environment(options, checkout):
     )
     search_paths = environment.get("PYTHONPATH", "").split(os.pathsep)
     absolute_paths = [str(Path(path).resolve()) for path in search_paths if path]
-    environment["PYTHONPATH"] = os.pathsep.join([str(checkout), *absolute_paths])
+    roots = [checkout]
+    source_parent = (checkout / options.source).parent
+    if source_parent.is_dir() and source_parent != checkout:
+        roots.append(source_parent)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [*(str(root) for root in roots), *absolute_paths]
+    )
     return environment
 
 
