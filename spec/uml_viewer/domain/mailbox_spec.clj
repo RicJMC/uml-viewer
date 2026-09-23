@@ -25,6 +25,17 @@
         (should= "42" (:window-id info))
         (should= "companion.edn" mailbox/companion-name))))
 
+  (it "quarantines an unparseable mailbox instead of failing forever"
+    (let [root (tmp-root)
+          f (mailbox/to-viewer root)]
+      (.mkdirs (.getParentFile f))
+      (spit f "{:next-id 2, :queue [{:id 1, :op :display, :path \"x.edn\"}}")
+      (should= {:next-id 1 :queue []} (mailbox/read-mailbox f))
+      (should (.exists (first (filter #(re-find #"\.bad-" (.getName %))
+                                      (.listFiles (.getParentFile f))))))
+      (mailbox/write-command! f :display {:path "uml-viewer.edn"})
+      (should= :display (:op (mailbox/take-command! f)))))
+
   (it "writes commands atomically with rising ids"
     (let [root (tmp-root)
           f (mailbox/to-agent root)

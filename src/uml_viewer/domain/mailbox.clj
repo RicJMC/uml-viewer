@@ -26,12 +26,34 @@
 (defn companion-file [root]
   (io/file (dir root) companion-name))
 
+(def ^:private unparseable (Object.))
+
+(defn- quarantine!
+  "Move an unparseable mailbox file aside. One bad write then costs its
+   own message instead of wedging the reader forever: the next valid
+   write starts a fresh queue."
+  [file]
+  (try
+    (let [f (io/file file)
+          bad (io/file (str (.getPath f) ".bad-" (System/nanoTime)))]
+      (Files/move (.toPath f) (.toPath bad)
+                  (into-array StandardCopyOption [StandardCopyOption/ATOMIC_MOVE]))
+      (binding [*out* *err*]
+        (println "UML viewer mailbox:" (.getName f)
+                 "was not valid EDN; moved to" (.getName bad))))
+    (catch Exception _)))
+
 (defn read-command
   [file]
   (when (and file (.isFile (io/file file)))
-    (try
-      (edn/read-string (slurp file))
-      (catch Exception _ nil))))
+    (let [text (try (slurp file) (catch Exception _ nil))
+          form (when text
+                 (try
+                   (edn/read-string text)
+                   (catch Exception _ unparseable)))]
+      (if (identical? form unparseable)
+        (do (quarantine! file) nil)
+        form))))
 
 (def ^:private keep-n 32)
 
