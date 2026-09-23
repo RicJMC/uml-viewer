@@ -74,9 +74,10 @@ to the project's repo), writes `./uml`, and starts the viewer. `--install-only`
 skips the start. `UML_VIEWER_REPO_URL` and `UML_VIEWER_REF` override the clone
 source (default `master`).
 
-`./uml` and `clj -M:run` (from a terminal) return immediately; the diagram
-runs in its own JVM. Exceptions and JVM output append to
-**`uml-viewer-log.txt`** in the project directory (gitignored).
+`./uml` returns immediately (`clojure` in the background, not `clj`/`rlwrap`).
+The diagram is its own JVM. Exceptions and JVM output append to
+**`uml-viewer-log.txt`** in the project directory (gitignored). `clj -M:run`
+still holds the terminal; prefer `./uml`.
 
 A **tmux** session unique to the examined project starts interactive Grok in
 that directory (`--yolo --trust --rules …` plus a launch prompt). The name is

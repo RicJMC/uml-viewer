@@ -98,7 +98,8 @@ launch_viewer() {
     [[ \$# -gt 0 ]] && printf ' %s' "\$@"
     printf '\\n'
   } >> "\$LOG"
-  nohup clj -Sdeps "\$DEPS" -M -m uml-viewer.main.uml-viewer "\$@" >> "\$LOG" 2>&1 </dev/null &
+  nohup clojure -Sdeps "\$DEPS" -M -m uml-viewer.main.uml-viewer "\$@" >> "\$LOG" 2>&1 </dev/null &
+  disown
   echo "UML viewer started (pid \$!). Log: \$LOG"
 }
 
