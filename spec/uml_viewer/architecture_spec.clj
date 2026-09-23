@@ -5,6 +5,7 @@
 
 (def layer-rank
   {:domain 0 :source 0 :graph 0 :clojure-language 0 :python-language 0
+   :languages 0
    :engine 1
    :application 2
    :adapters 3
@@ -95,7 +96,7 @@
                                  (#{'javax.swing 'java.awt} %)))))
 
   (it "keeps the language graph and domain free of Swing and Quil"
-    (should= [] (violations #(contains? #{:graph :domain} (layer-of %))
+    (should= [] (violations #(contains? #{:graph :domain :languages} (layer-of %))
                             #(or (quil-lib? %)
                                  (#{'javax.swing 'java.awt} %)))))
 

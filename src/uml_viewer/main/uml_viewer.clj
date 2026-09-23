@@ -6,6 +6,7 @@
             [uml-viewer.application.ir-generator :as ir-generator]
             [uml-viewer.clojure-language.source-clojure :as clj-source]
             [uml-viewer.domain.log :as log]
+            [uml-viewer.languages.external :as external]
             [uml-viewer.main.ir-generator :as generator]
             [uml-viewer.python-language.source-python :as python-source])
   (:import (java.io File)
@@ -48,6 +49,7 @@
   (case (or (:lang document) :clojure)
     :clojure clj-source/impl
     :python (python-source/create (:source-root document) (:source-prefix document))
+    :typescript external/typescript-source
     (throw (ex-info "Unsupported document language" {:lang (:lang document)}))))
 
 (defn regenerate! [path]

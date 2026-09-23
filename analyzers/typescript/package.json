@@ -1,0 +1,9 @@
+{
+  "name": "uml-analyzer-ts",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript source scanner for uml-viewer",
+  "dependencies": {
+    "typescript": "^5.6.3"
+  }
+}
