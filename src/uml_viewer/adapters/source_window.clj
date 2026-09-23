@@ -63,13 +63,14 @@
 
 (defn source-lines->html
   ([source] (source-lines->html source nil))
-  ([source highlight-line]
+  ([source highlight-line] (source-lines->html source highlight-line :clojure))
+  ([source highlight-line language]
    (let [lines (str/split (or source "") #"\r?\n" -1)]
      (->> lines
           (map-indexed (fn [idx line]
                          (let [n (inc idx)
                                hl? (and highlight-line (= n highlight-line))
-                               line-html (colorize-clojure-html (expand-tabs line))
+                               line-html ((if (= language :clojure) colorize-clojure-html html-escape) (expand-tabs line))
                                visible-line (if (str/blank? line-html) "&nbsp;" line-html)]
                            (str "<tr class='" (if hl? "hl" "") "'>"
                                 "<td class='ln'>"
@@ -81,7 +82,8 @@
 
 (defn source->html
   ([title source] (source->html title source nil))
-  ([title source highlight-line]
+  ([title source highlight-line] (source->html title source highlight-line :clojure))
+  ([title source highlight-line language]
    (str "<html><head><style>"
         "body{margin:0;padding:0;background:#f8fafc;color:#111827;font-family:Menlo,Monaco,Consolas,monospace;}"
         ".hdr{padding:10px 12px;background:#e5e7eb;border-bottom:1px solid #cbd5e1;font-family:sans-serif;font-size:13px;}"
@@ -98,13 +100,13 @@
         ".kw{color:#1d4ed8;}"
         "</style></head><body>"
         "<div class='hdr'>" (html-escape title) "</div>"
-        "<div class='src'><table>" (source-lines->html source highlight-line) "</table></div>"
+        "<div class='src'><table>" (source-lines->html source highlight-line language) "</table></div>"
         "</body></html>")))
 
 (defn- build-frame!
-  [title body line]
+  [title body line language]
   (let [frame (JFrame. title)
-        editor (JEditorPane. "text/html" (source->html title body line))
+        editor (JEditorPane. "text/html" (source->html title body line language))
         scroll (JScrollPane. editor)]
     (.setEditable editor false)
     (.setCaretPosition editor 0)
@@ -124,10 +126,10 @@
   `source-impl` satisfies `LanguageSource`. `ident` is a source identity
   map, or `ns-name` plus `member-name`."
   ([source-impl ident]
-   (when-let [{:keys [title body line]} (source/member-source source-impl ident)]
+   (when-let [{:keys [title body line lang]} (source/member-source source-impl ident)]
      (SwingUtilities/invokeLater
        (fn []
-         (build-frame! title body line)))
+         (build-frame! title body line lang)))
      true))
   ([source-impl ns-name member-name]
    (open-member-window! source-impl {:ns ns-name :name member-name})))

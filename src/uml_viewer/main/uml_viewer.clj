@@ -1,8 +1,13 @@
 (ns uml-viewer.main.uml-viewer
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [uml-viewer.adapters.core :as core]
+            [uml-viewer.adapters.sketch :as sketch]
+            [uml-viewer.application.ir-generator :as ir-generator]
             [uml-viewer.clojure-language.source-clojure :as clj-source]
-            [uml-viewer.domain.log :as log])
+            [uml-viewer.domain.log :as log]
+            [uml-viewer.main.ir-generator :as generator]
+            [uml-viewer.python-language.source-python :as python-source])
   (:import (java.io File)
            (java.lang ProcessBuilder ProcessBuilder$Redirect))
   (:gen-class))
@@ -39,14 +44,31 @@
     (.put (.environment pb) foreground-env "1")
     (.start pb)))
 
+(defn source-for [document]
+  (case (or (:lang document) :clojure)
+    :clojure clj-source/impl
+    :python (python-source/create (:source-root document) (:source-prefix document))
+    (throw (ex-info "Unsupported document language" {:lang (:lang document)}))))
+
+(defn regenerate! [path]
+  (let [document (edn/read-string (slurp path))
+        policy-path (:policy-file document)
+        policy (ir-generator/read-policy policy-path)]
+    (ir-generator/generate (generator/graph-for policy) policy-path path)))
+
 (defn -main [& args]
   (when (should-detach? args)
     (let [p (detach! args)]
       (println "UML viewer started (pid" (.pid p) "). Log:" log/log-name)
       (System/exit 0)))
   (log/install-exception-log!)
-  (try
-    (apply core/start! clj-source/impl args)
-    (catch Throwable t
-      (log/log-exception! t "start!")
-      (System/exit 1))))
+  (let [options (core/parse-args args)
+        document (when-not (:help? options)
+                   (try
+                     (edn/read-string (slurp (:path options)))
+                     (catch Exception _ nil)))]
+    (swap! sketch/!bridge assoc :standalone? (boolean (:standalone? options)))
+    (when (:standalone? options)
+      (swap! sketch/!bridge assoc :keep-agent true
+             :regenerate #(regenerate! (:path options))))
+    (apply core/start! (if document (source-for document) clj-source/impl) args)))

@@ -2,7 +2,8 @@
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [uml-viewer.domain.ir :as ir]))
+            [uml-viewer.domain.ir :as ir]
+            [uml-viewer.application.snapshot :as snapshot]))
 
 (defn- read-edn [f]
   (when (and f (.exists (io/file f)))
@@ -57,16 +58,19 @@
 (defn load-metrics
   ([] (load-metrics (System/getProperty "user.dir")))
   ([root]
-   {:crap (or (load-crap root) {})
-    :mutate (or (load-mutate root) {})}))
+   (let [state (snapshot/load-state root)
+         readable? (#{"current" "unverified"} (:status state))]
+     (merge state
+            {:crap (if readable? (or (load-crap root) {}) {})
+             :mutate (if readable? (or (load-mutate root) {}) {})}))))
 
 (defn metrics-stamp
-  "Fingerprint of `.metrics` snapshot files (CRAP and mutation)."
+  "Fingerprint of score files and their publication state."
   [root]
-  (let [crap (io/file root ".metrics" "crap.edn")
-        files (cond-> []
-                (.isFile crap) (conj crap)
-                true (into (or (mutate-files root) [])))]
+  (let [snapshots (map #(io/file root ".metrics" %)
+                       ["crap.edn" "manifest.edn" "updating"])
+        files (concat (filter #(.isFile %) snapshots)
+                      (or (mutate-files root) []))]
     (->> files
          (map (fn [f] [(.getPath f) (.lastModified f) (.length f)]))
          sort
@@ -82,12 +86,15 @@
 (defn- mutate-by-fn [snapshot]
   (into {}
         (keep (fn [form]
-                (when-let [n (form-name (:id form))]
+                (when-let [n (if (:name form)
+                               (select-keys form [:name :private])
+                               (form-name (:id form)))]
                   [(:name n) (assoc n
                                :killed (:killed form)
                                :survived (:survived form)
                                :uncovered (:uncovered form)
-                               :sites (:sites form))]))
+                               :mutation-status (:status form)
+                               :sites (or (:sites form) (:total form)))]))
               (:forms snapshot))))
 
 (defn class-namespace
@@ -130,6 +137,7 @@
                   :survived (or (:survived mut-fn) 0)
                   :uncovered (or (:uncovered mut-fn) 0)
                   :sites (counted-sites mut-fn))
+    (:mutation-status mut-fn) (assoc :mutation-status (:mutation-status mut-fn))
     (or (:private op) (:private mut-fn)) (assoc :private true)))
 
 (defn- ops-for-class [c crap-fns mut-fns]
@@ -149,6 +157,8 @@
         mut-fns (mutate-by-fn (get mutate-by-ns ns-name))
         scores (keep :crap crap-fns)
         coverages (keep :coverage crap-fns)
+        statements (reduce + 0 (keep :statements crap-fns))
+        covered (reduce + 0 (keep :covered crap-fns))
         ops (ops-for-class c crap-fns mut-fns)
         killed (apply + 0 (keep :killed (vals mut-fns)))
         survived (apply + 0 (keep :survived (vals mut-fns)))
@@ -159,6 +169,11 @@
                           :cc (apply + (map :complexity crap-fns)))
       (seq coverages) (assoc :coverage (pct->ratio
                                          (/ (reduce + coverages) (count coverages))))
+      (pos? statements) (assoc :coverage (/ (double covered) statements))
+      (some :mutation-status (vals mut-fns))
+      (assoc :mutation-status
+             (if (every? #(= "complete" (:mutation-status %)) (vals mut-fns))
+               "complete" "partial"))
       (seq mut-fns) (assoc :killed killed :survived survived :uncovered uncovered
                            :sites sites)
       (seq ops) (assoc :ops ops))))
@@ -174,7 +189,7 @@
 (defn- paint-diagram [d metrics]
   (ir/normalize (update d :packages paint-packages metrics)))
 
-(defn apply-metrics
+(defn- apply-scores
   [doc metrics]
   (if (and (empty? (:crap metrics)) (empty? (:mutate metrics)))
     doc
@@ -188,3 +203,10 @@
       (:packages doc)
       (paint-diagram doc metrics)
       :else doc)))
+
+(defn apply-metrics [document metrics]
+  (if (not= :verified (:metrics-mode document))
+    (apply-scores document metrics)
+    (if (snapshot/matches? document metrics)
+      (apply-scores (snapshot/map-classes document snapshot/mark-current) metrics)
+      (snapshot/map-classes document snapshot/clear-class))))

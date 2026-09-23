@@ -42,6 +42,124 @@ by [crap4clj](https://github.com/unclebob/crap4clj) and
 files at load, keyed by namespace + function name. Agents edit the policy, not
 the IR. See [Policy](#policy).
 
+## Python support
+
+The Python adapter uses the same desktop viewer, policy format, and language
+interfaces. It reads source without importing the examined package.
+
+From this checkout, install Python 3.9+ support and generate the small example:
+
+```sh
+python3 -m pip install -e .
+clojure -M:ir examples/python.policy.edn
+clojure -M:run --standalone target/python.edn
+```
+
+The desktop needs Java, Clojure CLI, and a graphical display. `--standalone`
+opens the native UI without launching or controlling a companion agent.
+Set `UML_PYTHON` if the viewer should use a particular Python interpreter.
+The upstream `get-uml-viewer` installer defaults to the Clojure repository.
+For Python, set `UML_VIEWER_REPO_URL` to this fork's Git URL when installing,
+install the Python package from that checkout, and use `--standalone` with
+your generated diagram.
+To examine your code, copy `examples/python.policy.edn`, then change `:src`,
+`:prefix`, and `:out`. Policy paths are relative to the working directory.
+
+Python modules, classes, methods, fields, imports, and inheritance appear in
+the diagram. Clicking a member opens its source. Regen reparses the policy's
+source package. Static dependencies do not prove runtime wiring or correctness.
+Computed imports and bases are reported as warnings when they cannot be resolved.
+
+### Local agent commands
+
+Codex, Claude, and other terminal agents can use the installed JSON interface:
+
+```sh
+uml-python inspect --root examples/python/library --prefix library
+uml-python scan --root examples/python/library --prefix library
+uml-python source --root examples/python/library --prefix library \
+  --namespace library.book.Book --name borrow
+uml-python refresh --policy examples/python.policy.edn
+```
+
+`inspect`, `scan`, `source`, and `metrics` are read-only. `refresh` invokes the
+same Clojure generator as the native Regen button. Set `UML_CLOJURE` to select
+a Clojure executable. No command calls an external AI service. Repository
+instructions for agents are in [AGENTS.md](AGENTS.md).
+
+Right-click actions and diagram selections also write the upstream mailbox,
+`.uml-viewer/to-agent.edn`. In standalone mode they do not wake Grok or launch
+an agent. Ask your local agent to handle its `:queue` oldest first and remove
+each handled entry. Preserve `:next-id` and other queued entries when writing
+the envelope. See [Companion mailbox](#companion-mailbox) for the format.
+For Python quality requests, use the measurement command below, not the
+Clojure quality aliases. It measures the configured source package; it does
+not currently limit a campaign to the clicked class. `:omit` changes the
+policy or proposal, then regenerates the diagram. `:context` selects the
+diagram being discussed. Regen itself runs locally in standalone mode.
+
+### Python quality measurements
+
+Install the optional tools into an environment that can run the examined
+project's tests. This example runs two small tests and at most three mutations:
+
+```sh
+python3 -m pip install -e '.[quality]'
+python3 -m uml_viewer_python.measure \
+  --project examples/python --source library --prefix library \
+  --tests tests --work target/python-quality --output target/.metrics \
+  --mutation-limit 3
+uml-python metrics --root examples/python/library --metrics target/.metrics
+```
+
+Tests and mutations run in a copied checkout. The baseline must pass before
+scores are published. Use one campaign per work and output directory. A new
+campaign needs a new work directory; `--resume` continues unchanged inputs.
+`--mutation-limit 0` runs all candidates from the supported operators.
+
+Coverage is Python statement coverage. It excludes native libraries and child
+Python processes. Complexity comes from Radon. CRAP is
+`complexity² × (1 - coverage_fraction)³ + complexity`. Class coverage is weighted
+by executable statements. Mutation operators invert comparisons and booleans,
+swap addition/subtraction, and replace multiplication with floor division.
+These limited operators measure test sensitivity, not software correctness.
+Timeouts, errors, uncovered sites, and pending candidates remain explicit.
+
+The viewer finds `.metrics` next to the generated diagram or in a parent
+folder. Verified snapshots carry input hashes. Changed or missing inputs
+invalidate them; missing and partial Python results stay unscored. Rerun after
+adding tests or changing dependencies. Nested function lines are included in
+the enclosing function's coverage range. Classes without written methods have
+no method score.
+
+Generated files can contain resolved source paths for local navigation.
+Keep them in ignored `target/`, not in commits. No examined project, dependency
+cache, screenshots, or machine-specific launcher belongs in this repository.
+
+### Development and upstream updates
+
+- `src/uml_viewer_python/` owns Python parsing, commands, and measurements.
+- `src/uml_viewer/python_language/` implements the existing Clojure language
+  interfaces. Main selects the implementation; the layout engine stays generic.
+- `spec/uml_viewer_python/` holds portable Python tests.
+- `spec/uml_viewer/python_language/` checks the language boundary in the native
+  viewer. Shared changes also run against the original viewer specifications.
+- `examples/python/` is the small self-contained demonstration.
+
+```sh
+python3 -m unittest discover -s spec/uml_viewer_python -v
+clojure -M:spec
+```
+
+The window specifications need a display. On Linux without a desktop, use
+`xvfb-run -a clojure -M:spec`.
+
+Keep Python-specific behavior behind these interfaces. Do not copy whole
+upstream viewer files to update the integration. When incorporating an upstream
+release, preserve its viewer behavior, reconcile the small shared integration
+changes, then run both test commands and regenerate the example. The original
+Clojure workflow remains available below.
+
 ## Run
 
 Needs Clojure CLI and Java 21+.
@@ -419,8 +537,7 @@ with `(graph/register! :java my-java-scanner)`. The scanner must satisfy
 Classes are `{:id :name :ns :stereotype}`. Edges are `{:from :to :kind}`
 (`:dependency` or `:implements`). The policy layer is language-neutral.
 
-**Clojure** (`uml-viewer.clojure-language.graph-clojure`) is the only
-implementation today: it reads `ns` forms (including prefix lists),
+**Clojure** (`uml-viewer.clojure-language.graph-clojure`) reads `ns` forms (including prefix lists),
 `requiring-resolve` of a quoted var (including nested calls), `defprotocol`,
 `defrecord`, and `deftype`. Java or C need a different parser; do not
 special-case languages in `policy` or `ir-generator`. Main constructs the
@@ -536,8 +653,7 @@ extractor must satisfy `LanguageSource`:
 | `extract` | slice that member out of the file text |
 | `title` | window title |
 
-**Clojure** (`uml-viewer.clojure-language.source-clojure`) is the only
-implementation today: it maps `:ns` to `src/...clj` (or `.cljc` / `.cljs`)
+**Clojure** (`uml-viewer.clojure-language.source-clojure`) maps `:ns` to `src/...clj` (or `.cljc` / `.cljs`)
 and finds the top-level `(defn name …)` / `(defn- name …)` so the window can
 jump to that line. That locate/line step is not enough for Java or C — those
 need a parser or language server, and a richer identity (`:class`,

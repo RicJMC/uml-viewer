@@ -4,7 +4,7 @@
             [speclj.core :refer :all]))
 
 (def layer-rank
-  {:domain 0 :source 0 :graph 0 :clojure-language 0
+  {:domain 0 :source 0 :graph 0 :clojure-language 0 :python-language 0
    :engine 1
    :application 2
    :adapters 3
@@ -99,8 +99,10 @@
                             #(or (quil-lib? %)
                                  (#{'javax.swing 'java.awt} %)))))
 
-  (it "wires clojure implementations only from main"
+  (it "wires language implementations only from main"
     (should= [] (violations #(not= :main (layer-of %))
                             #(contains? #{'uml-viewer.clojure-language.source-clojure
-                                          'uml-viewer.clojure-language.graph-clojure}
+                                          'uml-viewer.clojure-language.graph-clojure
+                                          'uml-viewer.python-language.source-python
+                                          'uml-viewer.python-language.graph-python}
                                         %)))))
