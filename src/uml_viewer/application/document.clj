@@ -257,20 +257,78 @@
                  ".policy.edn")]
       (when (.isFile (io/file p)) p))))
 
-(defn write-proposals!
-  "Persist named proposals to the IR and, when present, the policy file."
+(defn- policy-path
+  "Policy file for `doc`, resolved next to the IR when only a bare name is
+   recorded in the :policy-file key."
   [edn-path doc]
-  (let [proposals (mapv #(select-keys % [:id :name :layers])
-                        (policy/named-proposals doc))
-        doc (assoc doc :proposals proposals)
-        policy-path (or (:policy-file doc) (policy-path-for edn-path))]
-    (when edn-path
-      (spit edn-path (emit-doc doc)))
-    (when (and policy-path (.isFile (io/file policy-path)))
-      (let [p (edn/read-string (slurp policy-path))
-            p (-> p (assoc :proposals proposals) (dissoc :proposal))]
-        (spit policy-path
-              (binding [*print-namespace-maps* false
-                        pprint/*print-right-margin* 90]
-                (with-out-str (pprint/pprint p))))))
-    doc))
+  (let [named (:policy-file doc)
+        parent (some-> (io/file edn-path) .getAbsoluteFile .getParentFile)]
+    (cond
+      (nil? edn-path) nil
+      (and named (.isAbsolute (io/file named))) (str named)
+      named (let [near (io/file parent named)]
+              (if (.isFile near) (str near) (str named)))
+      :else (policy-path-for edn-path))))
+
+(defn- read-edn-file [path]
+  (try
+    (when (and path (.isFile (io/file path)))
+      (edn/read-string (slurp path)))
+    (catch Exception _ nil)))
+
+(defn- spit-atomic!
+  "Write `content` through a sibling temp file so readers never see a partial
+   file (the viewer watches the IR; the companion may regenerate it)."
+  [path content]
+  (let [target (io/file path)
+        tmp (io/file (str path ".tmp"))]
+    (io/make-parents target)
+    (spit tmp content)
+    (try
+      (java.nio.file.Files/move
+        (.toPath tmp) (.toPath target)
+        (into-array java.nio.file.CopyOption
+                    [java.nio.file.StandardCopyOption/REPLACE_EXISTING
+                     java.nio.file.StandardCopyOption/ATOMIC_MOVE]))
+      (catch Exception _
+        (java.nio.file.Files/move
+          (.toPath tmp) (.toPath target)
+          (into-array java.nio.file.CopyOption
+                      [java.nio.file.StandardCopyOption/REPLACE_EXISTING]))))))
+
+(defn- merge-proposals
+  "Doc proposals win by id; proposals already on disk that this document has
+   not seen are kept, so a viewer holding a stale document cannot erase them.
+   `removed` holds the ids the user deleted explicitly."
+  [on-disk doc removed]
+  (let [current (remove #(contains? removed (:id %))
+                        (policy/named-proposals on-disk))
+        edited (vec (policy/named-proposals doc))
+        by-id (into {} (map (juxt :id identity) edited))
+        seen (set (map :id current))]
+    (into (vec (keep (fn [p] (or (by-id (:id p)) p)) current))
+          (remove #(seen (:id %)) edited))))
+
+(defn write-proposals!
+  "Persist named proposals to the IR and, when present, the policy file.
+   Merges with the proposals already on disk; `opts` may carry `:removed`,
+   the ids deleted on purpose. `:omit` and `:notice` survive the round-trip."
+  ([edn-path doc] (write-proposals! edn-path doc {}))
+  ([edn-path doc {:keys [removed] :or {removed #{}}}]
+   (let [on-disk (read-edn-file edn-path)
+         proposals (->> (merge-proposals (or on-disk doc) doc removed)
+                        (mapv #(select-keys % [:id :name :layers :omit :notice])))
+         doc (assoc doc :proposals proposals)
+         written (assoc (or on-disk doc) :proposals proposals)
+         p-path (policy-path edn-path doc)]
+     (when edn-path
+       (spit-atomic! edn-path (emit-doc written)))
+     (let [p (read-edn-file p-path)]
+       (when (map? p)
+         (spit-atomic! p-path
+                       (binding [*print-namespace-maps* false
+                                 pprint/*print-right-margin* 90]
+                         (with-out-str
+                           (pprint/pprint (-> p (assoc :proposals proposals)
+                                              (dissoc :proposal))))))))
+     doc)))

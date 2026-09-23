@@ -38,12 +38,14 @@
   [state]
   (rebuild (assoc state :declutter (hierarchy/next-declutter (:declutter state)))))
 
-(defn- persist-doc [state doc]
-  (let [path (:path state)
-        doc (document/write-proposals! path doc)]
-    (rebuild (assoc state
-               :doc doc
-               :mtime (if path (.lastModified (java.io.File. path)) 0)))))
+(defn- persist-doc
+  ([state doc] (persist-doc state doc {}))
+  ([state doc opts]
+   (let [path (:path state)
+         doc (document/write-proposals! path doc opts)]
+     (rebuild (assoc state
+                :doc doc
+                :mtime (if path (.lastModified (java.io.File. path)) 0))))))
 
 (defn- with-proposals [doc ps]
   (assoc doc :proposals (vec ps)))
@@ -71,7 +73,7 @@
           state (cond-> state
                   (= id (:proposal-id state))
                   (assoc :proposal-id nil :proposal false))]
-      (persist-doc state doc))))
+      (persist-doc state doc {:removed #{id}}))))
 
 (defn rename-proposal
   [state id new-name]

@@ -23,23 +23,62 @@ IGNORED = {
     "node_modules",
 }
 
+# Viewer runtime state written while a measurement runs. It is not an input,
+# so it must neither fail the copy nor trip the changed-project guard.
+RUNTIME = {".uml-viewer", ".metrics"}
+
+
+def ignored(name):
+    return name in IGNORED or name in RUNTIME
+
+
+def copy_ignore(directory, names):
+    """Names copytree must skip: caches, viewer runtime state, symlinks."""
+    base = Path(directory)
+    return [
+        name
+        for name in names
+        if ignored(name) or (base / name).is_symlink()
+    ]
+
 
 def source_hashes(root):
     hashes = {}
     for directory, subdirectories, filenames in os.walk(root):
         subdirectories[:] = sorted(
-            name for name in subdirectories if name not in IGNORED
+            name
+            for name in subdirectories
+            if not ignored(name) and not (Path(directory) / name).is_symlink()
         )
         for name in subdirectories + sorted(filenames):
-            if name in IGNORED:
+            if ignored(name):
                 continue
             path = Path(directory) / name
+            if path.is_symlink() or not path.is_file():
+                continue
             relative = path.relative_to(root)
-            if path.is_symlink():
-                raise ValueError(f"Copy requires regular files, found symlink: {path}")
-            if path.is_file():
-                hashes[str(relative)] = hashlib.sha256(path.read_bytes()).hexdigest()
+            hashes[str(relative)] = hashlib.sha256(path.read_bytes()).hexdigest()
     return hashes
+
+
+def select_hashes(hashes, paths):
+    """Hashes for files under any project-relative path in `paths`."""
+    wanted = {path for path in paths if path}
+    prefixes = tuple(path.rstrip("/") + "/" for path in wanted)
+    return {
+        relative: digest
+        for relative, digest in hashes.items()
+        if relative in wanted or relative.startswith(prefixes)
+    }
+
+
+def changed_hashes(before, after):
+    """Project-relative paths whose content differs between two hash maps."""
+    return [
+        path
+        for path in sorted(set(before) | set(after))
+        if before.get(path) != after.get(path)
+    ]
 
 
 def run_process(command, checkout, environment, logfile, timeout):

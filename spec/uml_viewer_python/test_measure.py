@@ -10,6 +10,7 @@ from pathlib import Path
 
 from uml_viewer_python.mutations import candidates
 from uml_viewer_python.reports import metrics_status
+from uml_viewer_python.workspace import copy_ignore, select_hashes, source_hashes
 
 
 class MeasurementTest(unittest.TestCase):
@@ -167,6 +168,58 @@ class MeasurementTest(unittest.TestCase):
         changed = mutant["changed-source"]
         ast.parse(changed)
         self.assertIn('label = "é"; return 3 - 2', changed)
+
+
+class WorkspaceTest(unittest.TestCase):
+    def test_source_hashes_skips_symlinks_and_viewer_runtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            (project / "sample").mkdir(parents=True)
+            (project / "sample" / "logic.py").write_text("x = 1\n")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "big.py").write_text("y = 2\n")
+            (project / ".metrics").symlink_to(outside, target_is_directory=True)
+            (project / ".uml-viewer").mkdir()
+            (project / ".uml-viewer" / "to-agent.edn").write_text("{}\n")
+            (project / "link.py").symlink_to(outside / "big.py")
+            hashes = source_hashes(project)
+            self.assertIn("sample/logic.py", hashes)
+            self.assertNotIn("link.py", hashes)
+            self.assertFalse(any(key.startswith(".metrics") for key in hashes))
+            self.assertFalse(any(key.startswith(".uml-viewer") for key in hashes))
+
+    def test_copy_ignore_drops_runtime_state_and_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "sample").mkdir()
+            (root / "keep.py").write_text("\n")
+            (root / "outside").mkdir()
+            (root / ".metrics").symlink_to(root / "outside", target_is_directory=True)
+            (root / "linked.py").symlink_to(root / "keep.py")
+            ignored = copy_ignore(
+                root, ["sample", ".metrics", ".uml-viewer", "linked.py", "keep.py"]
+            )
+            self.assertEqual([".metrics", ".uml-viewer", "linked.py"], ignored)
+            self.assertNotIn("sample", ignored)
+            self.assertNotIn("keep.py", ignored)
+
+    def test_select_hashes_limits_to_measured_inputs(self):
+        hashes = {
+            "src/app/logic.py": "a",
+            "src/app/util.py": "b",
+            "tests/test_app.py": "c",
+            "notes.md": "d",
+        }
+        self.assertEqual(
+            {"src/app/logic.py": "a", "src/app/util.py": "b"},
+            select_hashes(hashes, ["src/app"]),
+        )
+        self.assertEqual(
+            {"tests/test_app.py": "c"},
+            select_hashes(hashes, ["tests/test_app.py"]),
+        )
 
 
 if __name__ == "__main__":

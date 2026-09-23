@@ -1,5 +1,6 @@
 (ns uml-viewer.application.document-spec
-  (:require [clojure.java.io :as io]
+  (:require [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [speclj.core :refer :all]
             [uml-viewer.engine.compose :as compose]
             [uml-viewer.application.document :as document]
@@ -320,4 +321,70 @@
           scene (document/compile-document doc)
           titles (map :title (:sections scene))]
       (should= ["One" "Two"] titles)
-      (should (apply < (map :title-y (:sections scene)))))))
+      (should (apply < (map :title-y (:sections scene))))))
+
+  (it "keeps proposals already on disk when the loaded document is stale"
+    (let [root (doto (io/file "target" (str "stale-proposals-" (System/nanoTime)))
+                 (.mkdirs))
+          edn-file (io/file root "d.edn")
+          policy (io/file root "d.policy.edn")]
+      (try
+        (spit edn-file
+              (pr-str {:hierarchical true :title "T" :classes [] :edges []
+                       :policy-file "d.policy.edn"
+                       :proposals [{:id :a :name "A" :layers [] :omit [:x]
+                                    :notice "kept"}
+                                   {:id :b :name "B" :layers []}]}))
+        (spit policy (pr-str {:title "T"
+                              :proposals [{:id :a :name "A" :layers []}]}))
+        (document/write-proposals!
+          (.getPath edn-file)
+          {:hierarchical true :title "T" :classes [] :edges []
+           :proposals [{:id :c :name "C" :layers []}]})
+        (let [written (edn/read-string (slurp edn-file))
+              edited (edn/read-string (slurp policy))]
+          (should= [:a :b :c] (mapv :id (:proposals written)))
+          (should= [:a :b :c] (mapv :id (:proposals edited)))
+          (should= [:x] (:omit (first (:proposals written))))
+          (should= "kept" (:notice (first (:proposals written)))))
+        (finally
+          (doseq [f (reverse (file-seq root))]
+            (io/delete-file f true))))))
+
+  (it "drops only the proposals marked as removed"
+    (let [root (doto (io/file "target" (str "removed-proposals-" (System/nanoTime)))
+                 (.mkdirs))
+          edn-file (io/file root "d.edn")]
+      (try
+        (spit edn-file
+              (pr-str {:hierarchical true :title "T" :classes [] :edges []
+                       :proposals [{:id :a :name "A" :layers []}
+                                   {:id :b :name "B" :layers []}]}))
+        (document/write-proposals!
+          (.getPath edn-file)
+          {:hierarchical true :title "T" :classes [] :edges []
+           :proposals [{:id :b :name "B" :layers []}]}
+          {:removed #{:a}})
+        (should= [:b] (mapv :id (:proposals (edn/read-string (slurp edn-file)))))
+        (finally
+          (doseq [f (reverse (file-seq root))]
+            (io/delete-file f true))))))
+
+  (it "finds the policy beside a relative IR path"
+    (let [root (doto (io/file "target" (str "relative-" (System/nanoTime))) (.mkdirs))
+          relative (str "target/" (.getName root) "/d.edn")
+          edn-file (io/file root "d.edn")
+          policy (io/file root "d.policy.edn")]
+      (try
+        (spit edn-file (pr-str {:hierarchical true :title "T" :classes [] :edges []
+                                :policy-file "d.policy.edn"}))
+        (spit policy (pr-str {:title "T"}))
+        (document/write-proposals!
+          relative
+          {:hierarchical true :title "T" :classes [] :edges []
+           :proposals [{:id :a :name "A" :layers []}
+                       {:id :b :name "B" :layers []}]})
+        (should= [:a :b] (mapv :id (:proposals (edn/read-string (slurp policy)))))
+        (finally
+          (doseq [f (reverse (file-seq root))]
+            (io/delete-file f true)))))))

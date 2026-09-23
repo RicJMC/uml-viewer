@@ -755,15 +755,25 @@
       (should-not (re-find #"close" script))
       (should-not (re-find #"Grok" script))))
 
-  (it "wakes Grok with text, a pause, then Enter as separate keys"
+  (it "wakes Grok with text, a pause, then CR and LF as separate keys"
     (let [sid "uml-viewer-proj-abc"
-          steps (sketch/notify-steps sid)]
+          steps (sketch/notify-steps sid :grok)]
       (should= ["send-keys" "-t" sid "-l" sketch/wake-message]
                (first steps))
       (should= [:sleep 150] (second steps))
       (should= ["send-keys" "-t" sid "C-m"] (nth steps 2))
       (should= [:sleep 50] (nth steps 3))
       (should= ["send-keys" "-t" sid "C-j"] (nth steps 4))))
+
+  (it "wakes Pi with the Enter key because C-m never submits"
+    (let [sid "uml-viewer-proj-abc"
+          steps (sketch/notify-steps sid :pi)]
+      (should= ["send-keys" "-t" sid "-l" sketch/wake-message]
+               (first steps))
+      (should= [:sleep 150] (second steps))
+      (should= ["send-keys" "-t" sid "Enter"] (nth steps 2))
+      (should= 3 (count steps))
+      (should-not (some #(= ["send-keys" "-t" sid "C-j"] %) steps))))
 
   (it "scales theme RGB into Terminal's 16-bit colors"
     (should= [5654 7196 8224] (sketch/rgb-16 [22 28 32]))

@@ -34,6 +34,10 @@
        "are the tree; do not invent Domain/Engine/Adapters packages), then\n"
        "regenerate the IR (`clj -M:ir` or this project's equivalent) so the\n"
        "diagram matches. Do not edit the generated EDN by hand.\n"
+       "When the policy is not Clojure, the clj -M:crap and clj -M:mutate\n"
+       "aliases do not exist: use the project's own quality command instead\n"
+       "(for :lang :python, ./metrics or `python -m uml_viewer_python.measure`),\n"
+       "and say that a broad campaign can take minutes before starting one.\n"
        "After every later source or policy change:\n"
        "1. Keep the policy as namespace nesting only. Do not re-home a ns to\n"
        "   fake a layer/component. Layer and component mean the same thing.\n"
@@ -231,14 +235,21 @@
   "You have mail from the viewer. If idle, read .uml-viewer/to-agent.edn.")
 
 (defn notify-steps
-  "SwarmForge-style wake-up: literal text, pause, CR, pause, LF."
+  "SwarmForge-style wake-up: literal text, pause, submit. Grok wants CR then
+   LF (C-m, C-j). Pi submits on the tmux `Enter` key: with tmux
+   `extended-keys on`, `C-m` is delivered as Ctrl+M and never submits."
   ([] (notify-steps (current-session)))
-  ([session]
-   [["send-keys" "-t" session "-l" wake-message]
-    [:sleep 150]
-    ["send-keys" "-t" session "C-m"]
-    [:sleep 50]
-    ["send-keys" "-t" session "C-j"]]))
+  ([session] (notify-steps session (agent-kind)))
+  ([session kind]
+   (if (= :pi kind)
+     [["send-keys" "-t" session "-l" wake-message]
+      [:sleep 150]
+      ["send-keys" "-t" session "Enter"]]
+     [["send-keys" "-t" session "-l" wake-message]
+      [:sleep 150]
+      ["send-keys" "-t" session "C-m"]
+      [:sleep 50]
+      ["send-keys" "-t" session "C-j"]])))
 
 (defn notify-agent!
   "Wake the companion Grok session. Returns false if tmux/session is missing."

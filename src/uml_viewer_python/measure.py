@@ -15,7 +15,13 @@ import coverage
 from .metrics import add_coverage, decode_source, function_records, mutant_inventory
 from .mutations import candidates
 from .reports import atomic_json, publish
-from .workspace import IGNORED, run_process, source_hashes
+from .workspace import (
+    changed_hashes,
+    copy_ignore,
+    run_process,
+    select_hashes,
+    source_hashes,
+)
 
 
 def arguments():
@@ -92,9 +98,7 @@ def prepare_checkout(options, hashes):
     else:
         if checkout.exists():
             raise ValueError("Work directory already used; choose a new one or resume")
-        shutil.copytree(
-            options.project, checkout, ignore=shutil.ignore_patterns(*IGNORED)
-        )
+        shutil.copytree(options.project, checkout, ignore=copy_ignore)
     atomic_json(identity_path, identity)
     return checkout
 
@@ -214,16 +218,23 @@ def run_mutant(mutant, records, checkout, environment, logfile, options):
     mutant.update({"status": status, "seconds": result["seconds"], "log": str(logfile)})
 
 
+def measurement_inputs(options):
+    """Project-relative roots the scores are about: source plus tests."""
+    selectors = [selector.split("::")[0] for selector in options.tests]
+    return [options.source, *selectors]
+
+
 def run_campaign(options):
     print(json.dumps({"stage": "hashing-inputs"}), flush=True)
     hashes = source_hashes(options.project)
+    inputs = select_hashes(hashes, measurement_inputs(options))
     checkout = prepare_checkout(options, hashes)
     environment = test_environment(options, checkout)
     report_path = options.work / "report.json"
     if options.resume:
         report = json.loads(report_path.read_text())
     else:
-        report = baseline_report(options, checkout, environment, hashes)
+        report = baseline_report(options, checkout, environment, inputs)
         atomic_json(report_path, report)
     attempted = 0
     for index, mutant in enumerate(report["mutants"]):
@@ -236,8 +247,13 @@ def run_campaign(options):
         attempted += 1
         atomic_json(report_path, report)
         print(json.dumps({"mutant": index, "status": mutant["status"]}), flush=True)
-    if source_hashes(options.project) != hashes:
-        raise RuntimeError("Original project changed; scores not published")
+    measured = select_hashes(source_hashes(options.project), measurement_inputs(options))
+    if measured != inputs:
+        changed = changed_hashes(inputs, measured)
+        raise RuntimeError(
+            "Measured inputs changed; scores not published: "
+            + ", ".join(changed[:5])
+        )
     source = (options.project / options.source).resolve()
     publish(report, options.output, source)
     counts = Counter(mutant["status"] for mutant in report["mutants"])
