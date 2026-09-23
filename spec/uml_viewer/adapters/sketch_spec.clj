@@ -674,7 +674,8 @@
   (it "names a tmux session and attaches Terminal to it"
     (let [cwd "/tmp/proj"
           sid (sketch/session-id cwd)
-          args (sketch/new-session-args cwd)
+          args (with-redefs [sketch/agent-kind (constantly :grok)]
+                 (sketch/new-session-args cwd))
           script (sketch/osascript (sketch/attach-command sid) sid)
           [br bg bb] (sketch/rgb-16 draw/bg)
           [gr gg gb] (sketch/rgb-16 draw/gold)]
@@ -713,6 +714,33 @@
                        script))
       (should (re-find (re-pattern (str "cursor color of grokTab to \\{" gr ", " gg ", " gb "\\}"))
                        script))))
+
+  (it "spawns Pi with the rules as system prompt when the agent is pi"
+    (let [cwd "/tmp/proj"
+          args (with-redefs [sketch/agent-kind (constantly :pi)]
+                 (sketch/new-session-args cwd))]
+      (should (some #{"new-session"} args))
+      (should (some #{(sketch/session-id cwd)} args))
+      (should-not (some #{"--yolo"} args))
+      (should-not (some #{"--rules"} args))
+      (should-not (some #{"GROK_THEME=terminal"} args))
+      (should= ["--approve" "--append-system-prompt" sketch/standing-rules
+                sketch/launch-prompt]
+               (->> args (drop-while #(not= "--approve" %))))))
+
+  (it "picks the agent from UML_VIEWER_AGENT before auto-detection"
+    (with-redefs [sketch/agent-env (constantly "pi")
+                  sketch/grok-executable (constantly "/bin/sh")]
+      (should= :pi (sketch/agent-kind)))
+    (with-redefs [sketch/agent-env (constantly "grok")]
+      (should= :grok (sketch/agent-kind)))
+    (with-redefs [sketch/agent-env (constantly nil)
+                  sketch/grok-executable (constantly "/no/such/grok")
+                  sketch/pi-executable (constantly "/bin/sh")]
+      (should= :pi (sketch/agent-kind)))
+    (with-redefs [sketch/agent-env (constantly nil)
+                  sketch/grok-executable (constantly "/bin/sh")]
+      (should= :grok (sketch/agent-kind))))
 
   (it "closes only this viewer's Terminal window by id"
     (let [script (sketch/close-terminal-script "42")]

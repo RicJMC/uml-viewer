@@ -78,8 +78,8 @@
        "changes. To restart it: write :quit-for-restart, wait for the JVM to\n"
        "exit, then ./uml --restart. Do not pass --restart except through that\n"
        "wrapper (or :uml-viewer-restart). Do not SIGKILL. Closing the viewer\n"
-       "kills only this companion's tmux session, not other Grok agents. If\n"
-       "this Grok process dies, tmux respawns it in the same pane.\n"
+       "kills only this companion's tmux session, not other agent sessions. If\n"
+       "this companion process dies, tmux respawns it in the same pane.\n"
        "Do not commit or push unless asked.\n"))
 
 (def launch-prompt
@@ -87,20 +87,67 @@
        "to match the project's namespaces (no invented layers/components), regenerate the "
        "IR, then wait for directives."))
 
+(defn- executable-found?
+  [path]
+  (let [f (io/file path)]
+    (and (.isFile f) (.canExecute f))))
+
+(defn- which
+  "Absolute path of `name` on PATH, or nil."
+  [name]
+  (->> (when-let [p (System/getenv "PATH")]
+         (.split p java.io.File/pathSeparator))
+       (keep (fn [dir]
+               (let [f (io/file dir name)]
+                 (when (executable-found? f) (.getAbsolutePath f)))))
+       first))
+
+(defn- resolve-bin
+  "`named` env override, then absolute `candidates`, then `name` on PATH,
+   then the bare `name`."
+  [named candidates name]
+  (or (when (and named (executable-found? (io/file named))) named)
+      (first (filter executable-found? candidates))
+      (which name)
+      name))
+
 (defn grok-executable
   []
-  (let [home (System/getenv "HOME")
-        named (System/getenv "GROK_BIN")
-        candidates (filter identity
-                           [named
-                            (when home (str home "/.grok/bin/grok"))
-                            "/usr/local/bin/grok"
-                            "/opt/homebrew/bin/grok"])]
-    (or (first (filter (fn [p]
-                         (let [f (io/file p)]
-                           (and (.isFile f) (.canExecute f))))
-                       candidates))
-        "grok")))
+  (let [home (System/getenv "HOME")]
+    (resolve-bin (System/getenv "GROK_BIN")
+                 (filter identity
+                         [(when home (str home "/.grok/bin/grok"))
+                          "/usr/local/bin/grok"
+                          "/opt/homebrew/bin/grok"])
+                 "grok")))
+
+(defn pi-executable
+  "The pi coding agent (pi.dev) binary. PI_BIN wins; then the usual
+   install locations, then PATH."
+  []
+  (let [home (System/getenv "HOME")]
+    (resolve-bin (System/getenv "PI_BIN")
+                 (filter identity
+                         [(when home (str home "/.local/bin/pi"))
+                          "/usr/local/bin/pi"])
+                 "pi")))
+
+(defn agent-env
+  "UML_VIEWER_AGENT value: \"pi\" or \"grok\" (nil = auto-detect)."
+  []
+  (System/getenv "UML_VIEWER_AGENT"))
+
+(defn agent-kind
+  "Companion agent: `:pi` or `:grok`. UML_VIEWER_AGENT=pi|grok wins;
+   otherwise grok when installed, else pi."
+  []
+  (let [env (agent-env)]
+    (cond
+      (= env "pi") :pi
+      (= env "grok") :grok
+      (executable-found? (grok-executable)) :grok
+      (executable-found? (pi-executable)) :pi
+      :else :grok)))
 
 (defonce !session-name (atom nil))
 
@@ -160,12 +207,18 @@
 (defn new-session-args
   ([cwd] (new-session-args cwd (session-id cwd)))
   ([cwd session]
-   ["new-session" "-d" "-s" session "-c" cwd
-    "-e" "GROK_THEME=terminal"
-    "-e" "GROK_TERMINAL_THEME=1"
-    "-e" "COLORTERM=truecolor"
-    (grok-executable) "--yolo" "--trust" "--rules" standing-rules
-    launch-prompt]))
+   (if (= :pi (agent-kind))
+     ["new-session" "-d" "-s" session "-c" cwd
+      "-e" "COLORTERM=truecolor"
+      (pi-executable) "--approve"
+      "--append-system-prompt" standing-rules
+      launch-prompt]
+     ["new-session" "-d" "-s" session "-c" cwd
+      "-e" "GROK_THEME=terminal"
+      "-e" "GROK_TERMINAL_THEME=1"
+      "-e" "COLORTERM=truecolor"
+      (grok-executable) "--yolo" "--trust" "--rules" standing-rules
+      launch-prompt])))
 
 (defn kill-session-args
   ([] (kill-session-args (current-session)))
