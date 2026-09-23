@@ -16,8 +16,14 @@
     (should-not (main/should-detach? [] nil nil)))
 
   (it "rebuilds a child JVM command that stays in the foreground"
-    (let [cmd (main/detach-command ["--restart" "doc.edn"])]
-      (should= "clojure.main" (nth cmd 3))
-      (should= "uml-viewer.main.uml-viewer" (nth cmd 5))
-      (should= ["--restart" "doc.edn"] (subvec cmd 6))
-      (should= log/log-name "uml-viewer-log.txt"))))
+    (let [cmd (vec (main/detach-command ["--restart" "doc.edn"]))
+          i (.indexOf cmd "clojure.main")]
+      (should= "clojure.main" (nth cmd i))
+      (should= "uml-viewer.main.uml-viewer" (nth cmd (+ i 2)))
+      (should= ["--restart" "doc.edn"] (vec (drop (+ i 3) cmd)))
+      (should= log/log-name "uml-viewer-log.txt")
+      (should= (main/setsid-bin) (first cmd))))
+
+  (it "leaves the launcher session so the kernel cannot SIGHUP the viewer"
+    (when-let [setsid (main/setsid-bin)]
+      (should= setsid (first (main/detach-command []))))))

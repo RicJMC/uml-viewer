@@ -29,10 +29,19 @@
 (defn- java-bin []
   (str (System/getProperty "java.home") File/separator "bin" File/separator "java"))
 
+(defn setsid-bin
+  "util-linux setsid, when present. The detached viewer must leave the
+   launcher's session: otherwise the kernel SIGHUPs it when the foreground
+   launcher exits and the window never opens."
+  []
+  (first (filter #(.canExecute (io/file %))
+                 ["/usr/bin/setsid" "/bin/setsid"])))
+
 (defn detach-command [args]
-  (into [(java-bin) "-cp" (System/getProperty "java.class.path")
-         "clojure.main" "-m" "uml-viewer.main.uml-viewer"]
-        (keep identity args)))
+  (vec (concat (when-let [setsid (setsid-bin)] [setsid])
+               [(java-bin) "-cp" (System/getProperty "java.class.path")
+                "clojure.main" "-m" "uml-viewer.main.uml-viewer"]
+               (keep identity args))))
 
 (defn detach!
   "Spawn a child JVM whose stdout/stderr append to the viewer log."
