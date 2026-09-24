@@ -244,6 +244,9 @@ Rename or move of a function is a new form: overlay does not match old names.
 
 ## Navigation
 
+A control-by-control list of every click and what to expect:
+[docs/CHEATSHEET.md](docs/CHEATSHEET.md).
+
 **Layer** and **component** mean the same thing: a namespace grouping
 (the first segment after the prefix, or a named proposal group).
 
