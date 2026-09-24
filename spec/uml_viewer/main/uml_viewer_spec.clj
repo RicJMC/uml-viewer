@@ -26,4 +26,8 @@
 
   (it "leaves the launcher session so the kernel cannot SIGHUP the viewer"
     (when-let [setsid (main/setsid-bin)]
-      (should= setsid (first (main/detach-command []))))))
+      (should= setsid (first (main/detach-command [])))))
+
+  (it "logs exceptions to uml-viewer-log.txt in the working directory"
+    (should= "uml-viewer-log.txt" log/log-name)
+    (should main/-main)))

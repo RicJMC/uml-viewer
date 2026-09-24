@@ -33,7 +33,10 @@ launch_viewer() {
     [[ $# -gt 0 ]] && printf ' %s' "$@"
     printf '\n'
   } >> "$LOG"
-  nohup clj -Sdeps "$DEPS" -M -m uml-viewer.main.uml-viewer "$@" >> "$LOG" 2>&1 </dev/null &
+  # `clj` is rlwrap on Homebrew; a background rlwrap stops (SIGTTOU) and
+  # never starts the JVM. `clojure` is the same CLI without the tty wrapper.
+  nohup clojure -Sdeps "$DEPS" -M -m uml-viewer.main.uml-viewer "$@" >> "$LOG" 2>&1 </dev/null &
+  disown
   echo "UML viewer started (pid $!). Log: $LOG"
 }
 
