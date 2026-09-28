@@ -279,20 +279,29 @@
             c))
         classes))
 
+(defn violation-kind
+  "Why a :dependency breaks the dependency rule: `:forbidden` (an explicit
+  forbidden pair in the edge's direction), `:independent` (two ids of one
+  independent group), or `:ranks` (it ascends the ranks, from a higher-level
+  inner segment to a lower-level outer one). Nil when it does not violate.
+  Explicit rules outrank the rank rule; the rank rule needs both ends ranked
+  and allows same rank."
+  ([e ranks] (violation-kind e ranks nil))
+  ([e ranks rules]
+   (when (= :dependency (:kind e))
+     (cond
+       (forbidden-pair? e rules) :forbidden
+       (independent-pair? e rules) :independent
+       (let [rf (rank-of (:from e) ranks)
+             rt (rank-of (:to e) ranks)]
+         (and rf rt (< rf rt))) :ranks))))
+
 (defn violating-dependency?
-  "True when a :dependency breaks the dependency rule: it ascends the ranks
-  (from a higher-level inner segment to a lower-level outer one), or it
-  matches an explicit rule (a forbidden pair in the edge's direction, or
-  two ids of one independent group). The rank rule needs both ends ranked;
-  same rank is allowed. Explicit rules need no ranks."
+  "True when a :dependency breaks the dependency rule; see `violation-kind`
+  for the three ways it can."
   ([e ranks] (violating-dependency? e ranks nil))
   ([e ranks rules]
-   (and (= :dependency (:kind e))
-        (let [rf (rank-of (:from e) ranks)
-              rt (rank-of (:to e) ranks)]
-          (boolean (or (and rf rt (< rf rt))
-                       (forbidden-pair? e rules)
-                       (independent-pair? e rules)))))))
+   (boolean (violation-kind e ranks rules))))
 
 (defn mark-violations
   "Set `:violating` on dependency edges that break the dependency rule."

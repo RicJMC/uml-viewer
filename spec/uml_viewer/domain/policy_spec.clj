@@ -241,6 +241,23 @@
       (should (policy/violating-dependency?
                 {:from :costs :to :store :kind :dependency} ranks rules))))
 
+  (it "names the rule an edge breaks"
+    (let [ranks (policy/level-ranks
+                  {:levels [[:models] [:store :costs] [:api]]})]
+      (should= :ranks (policy/violation-kind
+                        {:from :models :to :api :kind :dependency} ranks))
+      (should= :forbidden
+               (policy/violation-kind
+                 {:from :api :to :models :kind :dependency} ranks
+                 (policy/normalize-rules
+                   {:forbidden-pairs [{:from :api :to :models}]})))
+      (should= :independent
+               (policy/violation-kind
+                 {:from :store :to :costs :kind :dependency} ranks
+                 (policy/normalize-rules {:independent [[:store :costs]]})))
+      (should-be-nil (policy/violation-kind
+                       {:from :api :to :models :kind :implements} ranks))))
+
   (it "copies explicit rules into the IR and stamps them on edges"
     (let [g {:classes [{:id :store :name "Store" :ns "demo.store"}
                        {:id :costs :name "Costs" :ns "demo.costs"}

@@ -467,6 +467,22 @@ checks *indirect* import chains by default (`allow_indirect_imports` unset),
 so a chain through a third module is the linter's catch, not the viewer's —
 the linter remains the authority, and the two are complementary.
 
+### Reading the counts from the shell
+
+The loop this tool is built for is: regenerate, count, point at one arrow.
+The generator prints the count and the list in the same run:
+
+```bash
+clj -M:ir uml-viewer.policy.edn target/uml-viewer.edn --report
+```
+
+After the usual `Wrote …` line it prints `Violations: N (ranks a, forbidden
+b, independent c)`, one line per violating edge (`from -> to [rule]`), and
+the project's mutual-import pairs (`a <-> b`) — module pairs that import
+each other, which no single-direction rank rule can see. Exit code and the
+written file are unchanged, so a post-push alias or CI step can regenerate
+and read the list in one run.
+
 ### Proposed components
 
 `:proposals` is a list of named groupings of **existing** top-level segments.

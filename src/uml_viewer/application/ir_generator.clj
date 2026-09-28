@@ -41,12 +41,10 @@
   [graph-impl policy]
   (:doc (build graph-impl policy)))
 
-(defn generate
-  "Write the IR document for `policy-path` using `graph-impl`. Returns the output path.
+(defn- generate-all
+  "Build, write, and return both the output path and the IR document.
    `opts` may include `:metrics-root` (default user.dir) for the static member snapshot."
-  ([graph-impl policy-path] (generate graph-impl policy-path nil))
-  ([graph-impl policy-path out-path] (generate graph-impl policy-path out-path {}))
-  ([graph-impl policy-path out-path opts]
+  [graph-impl policy-path out-path opts]
    (let [policy (read-policy policy-path)
          {:keys [graph doc]} (build graph-impl policy)
          extra (policy/unassigned policy graph)
@@ -63,4 +61,74 @@
                               members))
      (io/make-parents out)
      (spit out (emit doc))
-     out)))
+     {:out out :doc doc}))
+
+(defn generate
+  "Write the IR document for `policy-path` using `graph-impl`. Returns the output path."
+  ([graph-impl policy-path] (generate graph-impl policy-path nil))
+  ([graph-impl policy-path out-path] (generate graph-impl policy-path out-path {}))
+  ([graph-impl policy-path out-path opts]
+   (:out (generate-all graph-impl policy-path out-path opts))))
+
+(defn generate-with-doc
+  "Like `generate`, but returns `{:out path :doc document}` so callers can
+   read the counts without scanning the source twice."
+  ([graph-impl policy-path] (generate-with-doc graph-impl policy-path nil {}))
+  ([graph-impl policy-path out-path] (generate-with-doc graph-impl policy-path out-path {}))
+  ([graph-impl policy-path out-path opts]
+   (generate-all graph-impl policy-path out-path opts)))
+
+(defn summarize
+  "Refactor-loop counts for a generated IR `doc` (the as-is diagram): how
+  many edges violate the dependency rule and under which rule, one entry
+  per violating edge, and which project module pairs import each other
+  (edges in both directions between non-foreign ids). The count to read
+  after every feature push: violations must not grow, and every edge left
+  should have a name and a reason."
+  [doc]
+  (let [foreign (set (map :id (filter :foreign (:classes doc))))
+        project? (comp not foreign)
+        ranks (policy/level-ranks doc)
+        rules (policy/normalize-rules doc)
+        violating-edges (mapv (fn [e]
+                                {:from (:from e) :to (:to e)
+                                 :rule (or (policy/violation-kind e ranks rules)
+                                           :unknown)})
+                              (filter :violating (:edges doc)))
+        deps (->> (:edges doc)
+                  (filter #(and (project? (:from %)) (project? (:to %))))
+                  (map (juxt :from :to))
+                  set)
+        mutual-pairs (->> deps
+                          (filter #(contains? deps [(second %) (first %)]))
+                          (map (fn [[a b]]
+                                 (if (pos? (compare (name a) (name b)))
+                                   [b a] [a b])))
+                          distinct
+                          sort
+                          vec)]
+    {:violations (count violating-edges)
+     :by-rule (frequencies (map :rule violating-edges))
+     :violating-edges violating-edges
+     :mutual-pairs mutual-pairs}))
+
+(defn report
+  "Human-readable lines for `summarize`."
+  [doc]
+  (let [{:keys [violations by-rule violating-edges mutual-pairs]} (summarize doc)
+        order [:ranks :forbidden :independent :unknown]
+        breakdown (str/join ", "
+                            (keep (fn [k]
+                                    (when (contains? by-rule k)
+                                      (str (name k) " " (by-rule k))))
+                                  order))]
+    (concat
+      [(if (zero? violations)
+         "Violations: 0"
+         (format "Violations: %d (%s)" violations breakdown))]
+      (map (fn [{:keys [from to rule]}]
+             (format "  %s -> %s [%s]" (name from) (name to) (name rule)))
+           violating-edges)
+      [(format "Mutual imports: %d" (count mutual-pairs))]
+      (map (fn [[a b]] (format "  %s <-> %s" (name a) (name b)))
+           mutual-pairs))))
