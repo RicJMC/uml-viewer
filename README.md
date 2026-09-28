@@ -449,7 +449,10 @@ The rank model sees only the ascent of a single 1-D order: a ban that runs
 - `:independent` is **mutual**: any `:dependency` between two ids of the
   same group, in either direction, is violating.
 - Each entry accepts one id or a vector of ids; ids match by dotted prefix
-  (`store` covers `store.cache`).
+  (`store` covers `store.cache`). An edge whose two ends resolve to the
+  **same** listed id (e.g. `store.cache -> store` under `store`) is that
+  module's own wiring and never violates — the same convention `:levels`
+  uses, where a nested ns inherits its top segment's rank.
 - The generated IR carries both keys (policy level and per proposal), so the
   viewer re-evaluates them when you preview a proposal. `:association` and
   the other non-dependency kinds are never violating.

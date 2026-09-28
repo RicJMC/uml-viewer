@@ -41,7 +41,9 @@
     any :dependency between two ids of the same group, in either direction,
     is violating.
 
-  Ids match by dotted prefix (`store` covers `store.cache`)."
+  Ids match by dotted prefix (`store` covers `store.cache`). An edge whose
+  two ends resolve to the same listed id (`store.cache -> store` under
+  `store`) is that module's own wiring and never violates."
   [x]
   (let [pairs (->> (:forbidden-pairs x)
                    (keep (fn [p]
@@ -61,16 +63,27 @@
 (defn- listed? [id ids]
   (boolean (some #(matches-prefix? (as-id id) %) ids)))
 
+(defn- distinct-listed-pair?
+  "True when `from-id` matches listed id `a` and `to-id` matches a different
+   listed id `b`. Both ends resolving to the same listed id is one module's
+   internal wiring (e.g. `store.cache -> store` under `store`), not a pair."
+  [from-id to-id as bs]
+  (boolean
+    (some (fn [a]
+            (and (listed? from-id [a])
+                 (some #(and (not= % a) (listed? to-id [%])) bs)))
+          as)))
+
 (defn- forbidden-pair? [e rules]
   (boolean
     (some (fn [{:keys [from to]}]
-            (and (listed? (:from e) from) (listed? (:to e) to)))
+            (distinct-listed-pair? (:from e) (:to e) from to))
           (:forbidden-pairs rules))))
 
 (defn- independent-pair? [e rules]
   (boolean
     (some (fn [group]
-            (and (listed? (:from e) group) (listed? (:to e) group)))
+            (distinct-listed-pair? (:from e) (:to e) group group))
           (:independent rules))))
 
 (defn omitted-id?

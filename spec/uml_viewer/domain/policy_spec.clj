@@ -226,6 +226,21 @@
       (should-not (policy/violating-dependency? assoc ranks rules))
       (should-not (policy/violating-dependency? unrelated ranks rules))))
 
+  (it "never flags a module's internal edge against its own listed id"
+    (let [ranks (policy/level-ranks
+                  {:levels [[:models] [:sources] [:store :costs]]})
+          rules (policy/normalize-rules
+                  {:forbidden-pairs [{:from [:store :costs] :to [:store :costs]}]
+                   :independent [[:store :costs]]})]
+      (should-not (policy/violating-dependency?
+                    {:from :store :to :store :kind :dependency} ranks rules))
+      (should-not (policy/violating-dependency?
+                    {:from :store.cache :to :store :kind :dependency} ranks rules))
+      (should (policy/violating-dependency?
+                {:from :store.cache :to :costs :kind :dependency} ranks rules))
+      (should (policy/violating-dependency?
+                {:from :costs :to :store :kind :dependency} ranks rules))))
+
   (it "copies explicit rules into the IR and stamps them on edges"
     (let [g {:classes [{:id :store :name "Store" :ns "demo.store"}
                        {:id :costs :name "Costs" :ns "demo.costs"}
