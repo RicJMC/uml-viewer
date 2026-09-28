@@ -23,6 +23,69 @@
         p (name prefix)]
     (or (= s p) (str/starts-with? s (str p ".")))))
 
+(defn- id-list
+  "One id or a seq of ids -> a vector of ids."
+  [x]
+  (cond
+    (nil? x) []
+    (sequential? x) (mapv as-id x)
+    :else [(as-id x)]))
+
+(defn normalize-rules
+  "Explicit dependency rules from a policy or proposal map.
+
+  :forbidden-pairs [{:from id-or-ids :to id-or-ids}]
+    a :dependency from any listed source to any listed target is violating
+    no matter what the ranks say.
+  :independent [[id-or-ids ...] ...]
+    any :dependency between two ids of the same group, in either direction,
+    is violating.
+
+  Ids match by dotted prefix (`store` covers `store.cache`). An edge whose
+  two ends resolve to the same listed id (`store.cache -> store` under
+  `store`) is that module's own wiring and never violates."
+  [x]
+  (let [pairs (->> (:forbidden-pairs x)
+                   (keep (fn [p]
+                           (when (map? p)
+                             (let [from (id-list (:from p))
+                                   to (id-list (:to p))]
+                               (when (and (seq from) (seq to))
+                                 {:from from :to to})))))
+                   vec)
+        groups (->> (:independent x)
+                    (keep (fn [g]
+                            (let [ids (id-list g)]
+                              (when (seq ids) ids))))
+                    vec)]
+    {:forbidden-pairs pairs :independent groups}))
+
+(defn- listed? [id ids]
+  (boolean (some #(matches-prefix? (as-id id) %) ids)))
+
+(defn- distinct-listed-pair?
+  "True when `from-id` matches listed id `a` and `to-id` matches a different
+   listed id `b`. Both ends resolving to the same listed id is one module's
+   internal wiring (e.g. `store.cache -> store` under `store`), not a pair."
+  [from-id to-id as bs]
+  (boolean
+    (some (fn [a]
+            (and (listed? from-id [a])
+                 (some #(and (not= % a) (listed? to-id [%])) bs)))
+          as)))
+
+(defn- forbidden-pair? [e rules]
+  (boolean
+    (some (fn [{:keys [from to]}]
+            (distinct-listed-pair? (:from e) (:to e) from to))
+          (:forbidden-pairs rules))))
+
+(defn- independent-pair? [e rules]
+  (boolean
+    (some (fn [group]
+            (distinct-listed-pair? (:from e) (:to e) group group))
+          (:independent rules))))
+
 (defn omitted-id?
   "True when `id` is listed in `omit` or sits under a listed component."
   [id omit]
@@ -99,11 +162,14 @@
       (when (seq layers)
         {:notice proposal-notice :layers layers}))
     (map? p)
-    (let [layers (vec (keep-indexed layer-from (or (:layers p) [])))]
+    (let [layers (vec (keep-indexed layer-from (or (:layers p) [])))
+          rules (normalize-rules p)]
       (when (seq layers)
         {:notice (or (:notice p) proposal-notice)
          :layers layers
-         :omit (mapv as-id (or (:omit p) []))}))
+         :omit (mapv as-id (or (:omit p) []))
+         :forbidden-pairs (:forbidden-pairs rules)
+         :independent (:independent rules)}))
     :else nil))
 
 (defn timestamp-name
@@ -116,12 +182,15 @@
   [i p]
   (when (map? p)
     (let [layers (or (:layers (normalize-proposal p)) [])
+          rules (normalize-rules p)
           id (as-id (or (:id p) (str "proposal-" i)))
           n (or (:name p) (:label p) (name id))]
       {:id id
        :name (str n)
        :layers layers
        :omit (mapv as-id (or (:omit p) []))
+       :forbidden-pairs (:forbidden-pairs rules)
+       :independent (:independent rules)
        :notice (or (:notice p) proposal-notice)})))
 
 (defn named-proposals
@@ -210,30 +279,47 @@
             c))
         classes))
 
-(defn violating-dependency?
-  "True when a :dependency runs from a higher-level (inner) segment to a
-  lower-level (outer) one. Both ends must have a rank. Same rank is allowed."
-  [e ranks]
-  (and (= :dependency (:kind e))
+(defn violation-kind
+  "Why a :dependency breaks the dependency rule: `:forbidden` (an explicit
+  forbidden pair in the edge's direction), `:independent` (two ids of one
+  independent group), or `:ranks` (it ascends the ranks, from a higher-level
+  inner segment to a lower-level outer one). Nil when it does not violate.
+  Explicit rules outrank the rank rule; the rank rule needs both ends ranked
+  and allows same rank."
+  ([e ranks] (violation-kind e ranks nil))
+  ([e ranks rules]
+   (when (= :dependency (:kind e))
+     (cond
+       (forbidden-pair? e rules) :forbidden
+       (independent-pair? e rules) :independent
        (let [rf (rank-of (:from e) ranks)
              rt (rank-of (:to e) ranks)]
-         (boolean (and rf rt (< rf rt))))))
+         (and rf rt (< rf rt))) :ranks))))
+
+(defn violating-dependency?
+  "True when a :dependency breaks the dependency rule; see `violation-kind`
+  for the three ways it can."
+  ([e ranks] (violating-dependency? e ranks nil))
+  ([e ranks rules]
+   (boolean (violation-kind e ranks rules))))
 
 (defn mark-violations
   "Set `:violating` on dependency edges that break the dependency rule."
-  [edges ranks]
-  (mapv (fn [e]
-          (if (violating-dependency? e ranks)
-            (assoc e :violating true)
-            (dissoc e :violating)))
-        edges))
+  ([edges ranks] (mark-violations edges ranks nil))
+  ([edges ranks rules]
+   (mapv (fn [e]
+           (if (violating-dependency? e ranks rules)
+             (assoc e :violating true)
+             (dissoc e :violating)))
+         edges)))
 
 (defn restamp-ranks
   "Recompute `:level` on classes and `:violating` on edges from `ranks`.
   Used when a proposal's layer order differs from document `:levels`."
-  [classes edges ranks]
-  {:classes (with-levels (mapv #(dissoc % :level) classes) ranks)
-   :edges (mark-violations edges ranks)})
+  ([classes edges ranks] (restamp-ranks classes edges ranks nil))
+  ([classes edges ranks rules]
+   {:classes (with-levels (mapv #(dissoc % :level) classes) ranks)
+    :edges (mark-violations edges ranks rules)}))
 
 (defn merge-edges
   "Keep the strongest edge for each [from to] pair.
@@ -401,9 +487,10 @@
   (let [proposals (named-proposals policy)
         proposal (or (normalize-proposal (first proposals))
                      (normalize-proposal (:proposal policy)))
+        rules (normalize-rules policy)
         ranks (level-ranks policy)
         graph (-> (collapse-graph policy graph)
-                  (update :edges mark-violations ranks)
+                  (update :edges mark-violations ranks rules)
                   (update :classes with-levels ranks))
         levels (level-groups policy)]
     (if (hierarchical? policy)
@@ -418,7 +505,11 @@
                :classes (:classes graph)
                :edges (:edges graph)}
         (seq proposals) (assoc :proposals proposals)
-        proposal (assoc :proposal proposal))
+        proposal (assoc :proposal proposal)
+        (seq (:forbidden-pairs rules))
+        (assoc :forbidden-pairs (:forbidden-pairs rules))
+        (seq (:independent rules))
+        (assoc :independent (:independent rules)))
       {:title (or (:title policy) "UML")
        :diagrams (mapv (fn [d]
                          (if (= :overview (:view d))
