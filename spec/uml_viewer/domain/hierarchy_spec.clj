@@ -260,6 +260,28 @@
       (should= 1 (:level (box view :ir)))
       (should= 0 (:level (box view :layout)))))
 
+  (it "applies a proposal's explicit rules on top of its layer order"
+    (let [p (assoc policy
+              :levels [[:ir] [:layout]]
+              :proposals [{:id :rules :name "rules"
+                           :layers [{:id :kernel :label "Kernel" :nses [:ir]}
+                                    {:id :engine :label "Engine" :nses [:layout]}]
+                           :forbidden-pairs [{:from :layout :to :ir}]
+                           :independent [[:ir :source]]}])
+          g (update graph :edges conj
+                    {:from :layout :to :ir :kind :dependency}
+                    {:from :source :to :ir :kind :dependency})
+          doc (policy/apply-policy p g)
+          view (hierarchy/proposal-view doc :rules)
+          as-is (hierarchy/view-at doc [])
+          edge (fn [v from to]
+                 (first (filter #(and (= from (:from %)) (= to (:to %)))
+                                (:edges v))))]
+      (should-not (:violating (edge as-is :layout :ir)))
+      (should (:violating (edge view :layout :ir)))
+      (should (:violating (edge view :source :ir)))
+      (should-not (:violating (edge view :source.clojure :source)))))
+
 (describe "hierarchy"
   (it "collapses a violating leaf dependency onto the parent segments"
     (let [g (update graph :edges conj {:from :ir :to :layout :kind :dependency})

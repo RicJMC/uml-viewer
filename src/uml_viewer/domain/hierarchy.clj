@@ -508,12 +508,13 @@
          proposal (or (policy/normalize-proposal named)
                       (policy/normalize-proposal (:proposal doc)))
          layers (or (:layers proposal) [])
+         rules (policy/normalize-rules proposal)
          ranks (policy/ranks-from-layers layers)
          omit (set (concat (or (:omit doc) []) (or (:omit proposal) [])))
          leaves (into [] (remove #(or (:foreign %)
                                       (policy/omitted-id? (:id %) omit))
                                  (or (:classes doc) [])))
-         stamped-leaves (:classes (policy/restamp-ranks leaves [] ranks))
+         stamped-leaves (:classes (policy/restamp-ranks leaves [] ranks rules))
          by-id (into {} (map (juxt :id identity) stamped-leaves))
          claimed (set (mapcat #(policy/nse-ids (:nses %)) layers))
          extras (filterv #(not (or (claimed-covers? (:id %) claimed)
@@ -553,7 +554,7 @@
                     (policy/merge-edges
                       (remap-proposal-edges (or (:edges doc) []) visible owners))
                     kinds omit-edges)
-         edges (:edges (policy/restamp-ranks (vals by-id) remapped ranks))]
+         edges (:edges (policy/restamp-ranks (vals by-id) remapped ranks rules))]
      (if (seq pkgs)
        (assoc root
          :title notice
@@ -590,9 +591,10 @@
   (let [named (or (when (and (map? which) (:layers which)) which)
                   (when which (policy/proposal-by-id doc which))
                   (first (policy/named-proposals doc)))
-        layers (:layers (or (policy/normalize-proposal named)
-                            (policy/normalize-proposal (:proposal doc)))
-                        [])
+        proposal (or (policy/normalize-proposal named)
+                     (policy/normalize-proposal (:proposal doc)))
+        layers (:layers proposal [])
+        rules (policy/normalize-rules proposal)
         ranks (policy/ranks-from-layers layers)
         visible (into (set (map :id classes))
                       (map :id (:foreign view)))
@@ -601,7 +603,7 @@
                      (remap-proposal-edges (or (:edges doc) []) visible {}))
                    (or (:edge-kinds doc) {})
                    (or (:omit-edges doc) []))]
-    (:edges (policy/restamp-ranks classes remapped ranks))))
+    (:edges (policy/restamp-ranks classes remapped ranks rules))))
 
 (defn layer-view
   "One proposal package as the diagram, with its classes visible.

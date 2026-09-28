@@ -377,6 +377,8 @@ Right (the ns tree):
 | `:hierarchical` | Namespace tree (default when `:packages` is omitted) |
 | `:order` | Order of **existing** top-level ns segments, not new component names |
 | `:levels` | Groups of those segments, **inner (higher-level) first**. Same group = same rank |
+| `:forbidden-pairs` | Directed bans: `[{:from id-or-ids :to id-or-ids}]` — a dependency from any source to any target is violating regardless of rank |
+| `:independent` | Mutual bans: `[[id-or-ids ...] ...]` — any dependency between two ids of the same group, either direction, is violating |
 | `:proposals` | Named groupings of real segments; **not** instantiated in source. Inspector **Real diagram** row returns to the ns tree |
 | `:omit` | On a proposal or the policy: nses (and their children) left off the diagram |
 | `:edge-kinds` | Override parser kind for `[from to]` (usually `:association`) |
@@ -431,10 +433,42 @@ segments that sit at the same architectural level (e.g. `domain`, `source`,
 and `graph`). Omit `:levels` and nothing is marked. If `:levels` is omitted
 and `:proposals` is set, rank follows the first proposal's component order.
 
+### Explicit forbidden and independent pairs
+
+The rank model sees only the ascent of a single 1-D order: a ban that runs
+*down* the ranks, or between two same-rank siblings, is invisible. A policy
+(or one of its proposals) can declare those rules itself:
+
+```clojure
+:forbidden-pairs [{:from [store costs] :to [sources llm]}]
+:independent     [[pipeline status] [store costs]]
+```
+
+- `:forbidden-pairs` is **directed**: any `:dependency` from a listed source
+  to a listed target is violating no matter what the ranks say.
+- `:independent` is **mutual**: any `:dependency` between two ids of the
+  same group, in either direction, is violating.
+- Each entry accepts one id or a vector of ids; ids match by dotted prefix
+  (`store` covers `store.cache`).
+- The generated IR carries both keys (policy level and per proposal), so the
+  viewer re-evaluates them when you preview a proposal. `:association` and
+  the other non-dependency kinds are never violating.
+
+Use them when the real contract is not a single order — e.g. import-linter's
+`forbidden` and `independence` contracts, or ArchUnit's slices
+`notDependOnEachOther`, whose bans would otherwise need two complementary
+views to be seen.
+
+The paint is over **direct** edges. Import-linter's `forbidden` contract also
+checks *indirect* import chains by default (`allow_indirect_imports` unset),
+so a chain through a third module is the linter's catch, not the viewer's —
+the linter remains the authority, and the two are complementary.
+
 ### Proposed components
 
 `:proposals` is a list of named groupings of **existing** top-level segments.
 Those names are not namespaces. Each item is `{:id :name :layers [...] :omit [...]}`
+plus the optional `:forbidden-pairs` and `:independent` rules above
 (`:layers` here are named components; `:omit` keeps listed nses off
 **Unassigned**). The as-is diagram stays the ns tree.
 The inspector lists the real diagram (the namespace tree) just above

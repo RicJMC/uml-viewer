@@ -201,4 +201,59 @@
                          [merged] {[:a :b] :association} []))]
       (should (:violating merged))
       (should= :association (:kind assoc))
-      (should-be-nil (:violating assoc)))))
+      (should-be-nil (:violating assoc))))
+
+  (it "marks explicit forbidden pairs and independent siblings"
+    (let [ranks (policy/level-ranks
+                  {:levels [[:models] [:sources] [:store :costs]
+                            [:pipeline :status]]})
+          rules (policy/normalize-rules
+                  {:forbidden-pairs [{:from [:store :costs] :to :sources}]
+                   :independent [[:pipeline :status]]})
+          forbidden {:from :store :to :sources :kind :dependency}
+          prefixed {:from :store.cache :to :sources.http :kind :dependency}
+          reverse {:from :sources :to :store :kind :dependency}
+          sibling {:from :pipeline :to :status :kind :dependency}
+          back {:from :status :to :pipeline :kind :dependency}
+          assoc {:from :store :to :sources :kind :association}
+          unrelated {:from :sources :to :models :kind :dependency}]
+      (should-not (policy/violating-dependency? forbidden ranks))
+      (should (policy/violating-dependency? forbidden ranks rules))
+      (should (policy/violating-dependency? prefixed ranks rules))
+      (should (policy/violating-dependency? reverse ranks))
+      (should (policy/violating-dependency? sibling ranks rules))
+      (should (policy/violating-dependency? back ranks rules))
+      (should-not (policy/violating-dependency? assoc ranks rules))
+      (should-not (policy/violating-dependency? unrelated ranks rules))))
+
+  (it "copies explicit rules into the IR and stamps them on edges"
+    (let [g {:classes [{:id :store :name "Store" :ns "demo.store"}
+                       {:id :costs :name "Costs" :ns "demo.costs"}
+                       {:id :sources :name "Sources" :ns "demo.sources"}
+                       {:id :pipeline :name "Pipeline" :ns "demo.pipeline"}
+                       {:id :status :name "Status" :ns "demo.status"}]
+             :edges [{:from :store :to :sources :kind :dependency}
+                     {:from :pipeline :to :status :kind :dependency}
+                     {:from :sources :to :store :kind :dependency}]}
+          p {:title "T" :hierarchical true
+             :levels [[:models] [:sources] [:store :costs] [:pipeline :status]]
+             :forbidden-pairs [{:from [:store :costs] :to :sources}]
+             :independent [[:pipeline :status]]
+             :proposals [{:id :flat :name "flat"
+                          :forbidden-pairs [{:from [:store :costs] :to :sources}]
+                          :independent [[:pipeline :status]]
+                          :layers [{:id :dados :label "Dados" :nses [:store :costs]}
+                                   {:id :infra :label "Infra" :nses [:sources]}]}]
+             :order [:models :sources :store :costs :pipeline :status]}
+          doc (policy/apply-policy p g)
+          edge (fn [from to]
+                 (first (filter #(and (= from (:from %)) (= to (:to %)))
+                                (:edges doc))))]
+      (should= [{:from [:store :costs] :to [:sources]}] (:forbidden-pairs doc))
+      (should= [[:pipeline :status]] (:independent doc))
+      (should (:violating (edge :store :sources)))
+      (should (:violating (edge :pipeline :status)))
+      (should (:violating (edge :sources :store)))
+      (should= [{:from [:store :costs] :to [:sources]}]
+               (get-in doc [:proposals 0 :forbidden-pairs]))
+      (should= [[:pipeline :status]] (get-in doc [:proposals 0 :independent])))))
