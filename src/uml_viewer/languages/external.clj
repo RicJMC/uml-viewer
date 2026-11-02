@@ -279,7 +279,8 @@
          "After every later source or policy change:\n"
          "1. Keep the policy as module nesting only. Do not re-home a module to\n"
          "   fake a layer/component. Layer and component mean the same thing.\n"
-         "   Preserve :proposals (named components that are not namespaces). Do not\n"
+         "   Preserve :levels, :proposals, :forbidden-pairs and :independent when\n"
+         "   rewriting policy. Do not\n"
          "   invent :proposals on launch. The inspector lists them; click the real\n"
          "   diagram above Proposals to return to the namespace tree. If instructed,\n"
          "   add a named proposal to :proposals in the policy (default name is a\n"
@@ -342,7 +343,9 @@
       (:levels existing) (assoc :levels (:levels existing))
       (:proposals existing) (assoc :proposals (:proposals existing))
       (:proposal existing) (assoc :proposal (:proposal existing))
-      (:omit-edges existing) (assoc :omit-edges (:omit-edges existing)))))
+      (:omit-edges existing) (assoc :omit-edges (:omit-edges existing))
+      (:forbidden-pairs existing) (assoc :forbidden-pairs (:forbidden-pairs existing))
+      (:independent existing) (assoc :independent (:independent existing)))))
 
 (defn write-policy!
   [path policy]

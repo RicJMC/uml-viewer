@@ -166,3 +166,43 @@
                                (.getPath out-f)))
       (should= "" (str err))
       (should= "" (str out)))))
+
+(describe "ir-generator report"
+  (it "counts violations by rule and mutual imports"
+    (let [doc {:title "T" :hierarchical true
+               :levels [[:models] [:store :costs] [:api]]
+               :classes [{:id :models :name "Models"}
+                         {:id :store :name "Store"}
+                         {:id :store.cache :name "Cache"}
+                         {:id :costs :name "Costs"}
+                         {:id :api :name "Api"}]
+               :edges [{:from :models :to :api :kind :dependency :violating true}
+                       {:from :api :to :models :kind :dependency :violating true}
+                       {:from :store :to :costs :kind :dependency :violating true}
+                       {:from :costs :to :store :kind :dependency :violating true}
+                       {:from :store.cache :to :store :kind :dependency}]
+               :forbidden-pairs [{:from [:api] :to [:models]}]
+               :independent [[:store :costs]]}
+          summary (ir-generator/summarize doc)]
+      (should= 4 (:violations summary))
+      (should= {:ranks 1 :forbidden 1 :independent 2} (:by-rule summary))
+      (should= [{:from :models :to :api :rule :ranks}]
+               (filter #(= :ranks (:rule %)) (:violating-edges summary)))
+      (should-not (some #(= :store.cache (:from %))
+                        (:violating-edges summary)))
+      (should= [[:api :models] [:costs :store]] (:mutual-pairs summary))
+      (should= ["Violations: 4 (ranks 1, forbidden 1, independent 2)"
+                "  models -> api [ranks]"
+                "  api -> models [forbidden]"
+                "  store -> costs [independent]"
+                "  costs -> store [independent]"
+                "Mutual imports: 2"
+                "  api <-> models"
+                "  costs <-> store"]
+               (ir-generator/report doc))))
+  (it "reads the counts straight off a generated IR"
+    (let [policy (ir-generator/read-policy "examples/uml-viewer.policy.edn")
+          graph (graph/scan-project (:src policy) {:prefix (:prefix policy)})
+          doc (policy/apply-policy policy graph)]
+      (should (vector? (:mutual-pairs (ir-generator/summarize doc))))
+      (should (seq (ir-generator/report doc))))))

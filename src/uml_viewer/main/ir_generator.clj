@@ -25,7 +25,13 @@
       :else example)))
 
 (defn -main [& args]
-  (let [path (or (first args) (default-policy))
+  (let [report? (boolean (some #{"--report"} args))
+        args (remove #{"--report"} args)
+        path (or (first args) (default-policy))
         policy (ir-generator/read-policy path)
-        implementation (graph-for policy)]
-    (println "Wrote" (ir-generator/generate implementation path (second args)))))
+        implementation (graph-for policy)
+        {:keys [out doc]} (ir-generator/generate-with-doc implementation path (second args))]
+    (println "Wrote" out)
+    (when report?
+      (doseq [line (ir-generator/report doc)]
+        (println line)))))
