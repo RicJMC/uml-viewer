@@ -40,7 +40,8 @@ the next 20, then any free port.
 ## Phone and tablet
 
 A window narrower than 720 px drops the 280 px inspector and gives the whole
-width to the diagram. Two floating buttons replace it:
+width to the diagram. One finger pans, two fingers pinch-zoom, and a short tap
+presses. Two floating buttons replace the inspector:
 
 - **←** — up a level (same as Esc).
 - **Fit** — fit the whole scene.
@@ -65,6 +66,8 @@ shortcut.
 | Right-click a box | Refresh CRAP / mutation / omit menu. |
 | Right-click a proposal | Rename or delete. |
 | Wheel | Pan; Shift-wheel pans horizontally. |
+| One-finger drag | Pan (touch). |
+| Two-finger pinch | Zoom in / out (touch). |
 | Ctrl + / − / 0 | Zoom in / out / 100%. |
 | F | Fit the scene. |
 | R | Reload the EDN without waiting for the companion. |

@@ -88,6 +88,106 @@
     post({ type: "press", x: e.clientX, y: e.clientY, button: e.button, count: e.detail });
   });
 
+  // Touch: one finger pans, two fingers pinch-zoom, a short tap presses.
+  // Posting every touchmove would flood the server, so pan is batched.
+  let pan = { dx: 0, dy: 0, queued: false };
+  function flushPan() {
+    if (pan.dx) post({ type: "wheel", amount: pan.dx / 48, horizontal: 1 });
+    if (pan.dy) post({ type: "wheel", amount: pan.dy / 48, horizontal: 0 });
+    pan.dx = 0;
+    pan.dy = 0;
+  }
+  function queuePan(dx, dy) {
+    pan.dx += dx;
+    pan.dy += dy;
+    if (!pan.queued) {
+      pan.queued = true;
+      setTimeout(() => {
+        pan.queued = false;
+        flushPan();
+      }, 60);
+    }
+  }
+  function touchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  }
+  let touch = null;
+  stage.addEventListener(
+    "touchstart",
+    (e) => {
+      hideMenu();
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        touch = {
+          x: t.clientX,
+          y: t.clientY,
+          startX: t.clientX,
+          startY: t.clientY,
+          moved: false,
+          pinch: null,
+          time: Date.now(),
+        };
+      } else if (e.touches.length === 2) {
+        touch = { pinch: touchDistance(e.touches), moved: true };
+      }
+      e.preventDefault();
+    },
+    { passive: false }
+  );
+  stage.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!touch) return;
+      if (e.touches.length === 1 && touch.pinch === null) {
+        const t = e.touches[0];
+        const dx = t.clientX - touch.x;
+        const dy = t.clientY - touch.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) touch.moved = true;
+        queuePan(dx, dy);
+        touch.x = t.clientX;
+        touch.y = t.clientY;
+      } else if (e.touches.length === 2) {
+        const d = touchDistance(e.touches);
+        if (touch.pinch) {
+          const ratio = d / touch.pinch;
+          if (ratio > 1.12) {
+            post({ type: "key", key: "+", ctrl: 1 });
+            touch.pinch = d;
+          } else if (ratio < 0.89) {
+            post({ type: "key", key: "-", ctrl: 1 });
+            touch.pinch = d;
+          }
+        } else {
+          touch.pinch = d;
+        }
+      }
+      e.preventDefault();
+    },
+    { passive: false }
+  );
+  stage.addEventListener(
+    "touchend",
+    (e) => {
+      if (touch && !touch.pinch && !touch.moved && Date.now() - touch.time < 400) {
+        post({
+          type: "press",
+          x: touch.startX,
+          y: touch.startY,
+          button: 0,
+          count: 1,
+        });
+      }
+      if (!e.touches.length) {
+        if (pan.dx || pan.dy) flushPan();
+        touch = null;
+      }
+      e.preventDefault();
+    },
+    { passive: false }
+  );
+
   stage.addEventListener("contextmenu", (e) => e.preventDefault());
 
   stage.addEventListener(
