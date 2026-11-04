@@ -17,7 +17,7 @@
 
 (def default-window {:w 1500 :h 920})
 (def compact-width 720)
-(def compact-min-zoom 0.35)
+(def compact-min-zoom 0.5)
 
 (defn window [state]
   (or (:window state) default-window))

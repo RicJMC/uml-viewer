@@ -591,19 +591,19 @@
              (get-in state [:scene :diagram :title]))
     (get-in state [:scene :diagram :title])))
 
-(defn- diagram-banner [state]
+(defn- diagram-banner [state y]
   (when-let [title (window-title state)]
     (if (get-in state [:scene :diagram :proposal])
-      (text title 12 8 {:size 16 :ink gold})
-      (text title 12 8 {:size 12 :ink muted}))))
+      (text title 12 y {:size 16 :ink gold})
+      (text title 12 y {:size 12 :ink muted}))))
 
-(defn- nav-label [state]
+(defn- nav-label [state y]
   (when (or (seq (:focus state)) (:open-layer state))
     (text (str "← " (if (seq (:focus state))
                       (str/join "." (map name (:focus state)))
                       (or (get-in state [:scene :diagram :title])
                           (name (:open-layer state)))))
-          12 28 {:size 14 :ink gold})))
+          12 y {:size 14 :ink gold})))
 
 (defn- status [state {:keys [w h]}]
   (let [scene (:scene state)
@@ -627,8 +627,8 @@
            {:size 18 :ink muted :align [:center :center]}))
    (world state dims)
    (when-not (:compact? dims) (sidebar state dims))
-   (diagram-banner state)
-   (nav-label state)
+   (diagram-banner state (if (:compact? dims) 44 8))
+   (nav-label state (if (:compact? dims) 64 28))
    (status state dims)
    (if-let [{:keys [hit pointer]} (:pinned state)]
      (edge-popup hit pointer dims true)
