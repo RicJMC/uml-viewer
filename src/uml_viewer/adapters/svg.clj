@@ -617,7 +617,7 @@
             14 (- h 16) {:size 10 :ink muted :align [:left :center]}))))
 
 (defn frame
-  "The whole window for `state` at `dims` {:w :h}."
+  "The whole window for `state` at `dims` {:w :h :view-w :compact?}."
   [state {:keys [w h] :as dims}]
   [:svg {:xmlns "http://www.w3.org/2000/svg" :width w :height h
          :font-family "Helvetica Neue, Helvetica, Arial, sans-serif"}
