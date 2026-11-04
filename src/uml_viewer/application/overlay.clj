@@ -108,13 +108,14 @@
 
 (defn- normalize-ns
   "Crapper separates Rust with `::`, names a Go package by its import path
-  (`mod/internal/x`, a method's `mod/internal/x.Type`), and every other
-  language with `.`. All become dotted."
+  (`mod/internal/x`, a method's `mod/internal/x.Type`), and writes PHP
+  namespaces with `\\`. All become dotted."
   [s]
   (when s
     (-> (str s)
         (str/replace #"::" ".")
-        (str/replace #"/" "."))))
+        (str/replace #"/" ".")
+        (str/replace #"\\" "."))))
 
 (defn- prefix-name [prefix]
   (cond
