@@ -74,11 +74,13 @@
  :omit [],
  :edges
  [{:from :main.uml-viewer, :to :adapters.core, :kind :dependency}
+  {:from :adapters.viewer, :to :application.overlay, :kind :dependency}
   {:from :csharp-language.graph-csharp, :to :graph, :kind :implements}
   {:from :application.ir-generator, :to :application.metrics, :kind :dependency}
   {:from :engine.route, :to :engine.curve, :kind :dependency}
   {:from :ruby-language.source-ruby, :to :source, :kind :dependency}
   {:from :typescript-language.source-typescript, :to :source, :kind :dependency}
+  {:from :adapters.web, :to :adapters.sketch, :kind :dependency}
   {:from :languages.external, :to :source, :kind :implements}
   {:from :main.ir-generator,
    :to :typescript-language.graph-typescript,
@@ -105,25 +107,38 @@
   {:from :rust-language.graph-rust, :to :graph, :kind :implements}
   {:from :application.detail, :to :application.overlay, :kind :dependency}
   {:from :main.ir-generator, :to :java-language.graph-java, :kind :dependency}
+  {:from :adapters.viewer, :to :domain.policy, :kind :dependency}
+  {:from :adapters.viewer, :to :engine.hit, :kind :dependency}
   {:from :engine.layout, :to :domain.geom, :kind :dependency}
   {:from :python-language.source-python-external, :to :source, :kind :implements}
   {:from :python-language.graph-python, :to :graph, :kind :implements}
   {:from :main.uml-viewer, :to :rust-language.source-rust, :kind :dependency}
+  {:from :adapters.viewer, :to :source, :kind :dependency}
+  {:from :adapters.viewer, :to :application.detail, :kind :dependency}
   {:from :adapters.sketch, :to :application.events, :kind :dependency}
   {:from :haskell-language.graph-haskell,
    :to :haskell-language.syntax,
    :kind :dependency}
   {:from :application.document, :to :engine.compose, :kind :dependency}
+  {:from :adapters.web, :to :adapters.markup, :kind :dependency}
   {:from :application.overlay, :to :domain.config, :kind :dependency}
+  {:from :adapters.svg, :to :domain.hierarchy, :kind :dependency}
   {:from :main.uml-viewer, :to :typescript-language.source-typescript, :kind :dependency}
   {:from :application.document, :to :domain.ir, :kind :dependency}
+  {:from :adapters.palette, :to :domain.config, :kind :dependency}
+  {:from :adapters.svg, :to :application.detail, :kind :dependency}
   {:from :adapters.draw, :to :application.detail, :kind :dependency}
   {:from :adapters.draw, :to :quil, :kind :dependency}
+  {:from :adapters.svg, :to :adapters.palette, :kind :dependency}
+  {:from :adapters.web, :to :domain.log, :kind :dependency}
   {:from :kotlin-language.parse-kotlin, :to :graph, :kind :dependency}
+  {:from :adapters.web, :to :application.document, :kind :dependency}
+  {:from :adapters.web, :to :domain.mailbox, :kind :dependency}
   {:from :kotlin-language.graph-kotlin,
    :to :kotlin-language.parse-kotlin,
    :kind :dependency}
   {:from :main.metrics, :to :application.metrics, :kind :dependency}
+  {:from :adapters.svg, :to :application.document, :kind :dependency}
   {:from :main.uml-viewer, :to :kotlin-language.source-kotlin, :kind :dependency}
   {:from :main.cpp-adapter, :to :cpp-language.clang-uml, :kind :dependency}
   {:from :main.uml-viewer, :to :domain.log, :kind :dependency}
@@ -138,6 +153,7 @@
   {:from :main.uml-viewer, :to :ruby-language.source-ruby, :kind :dependency}
   {:from :haskell-language.source-haskell, :to :source, :kind :implements}
   {:from :application.events, :to :application.detail, :kind :dependency}
+  {:from :adapters.viewer, :to :application.events, :kind :dependency}
   {:from :adapters.source-window, :to :source, :kind :dependency}
   {:from :kotlin-language.source-kotlin, :to :source, :kind :dependency}
   {:from :ruby-language.graph-ruby, :to :ruby-language.grape, :kind :dependency}
@@ -150,9 +166,11 @@
   {:from :java-language.graph-java, :to :graph, :kind :implements}
   {:from :main.uml-viewer, :to :csharp-language.source-csharp, :kind :dependency}
   {:from :adapters.draw, :to :engine.hit, :kind :dependency}
+  {:from :adapters.viewer, :to :adapters.sketch, :kind :dependency}
   {:from :clojure-language.graph-clojure, :to :graph, :kind :implements}
   {:from :adapters.draw, :to :domain.geom, :kind :dependency}
   {:from :application.events, :to :domain.hierarchy, :kind :dependency}
+  {:from :adapters.web, :to :application.overlay, :kind :dependency}
   {:from :kotlin-language.source-kotlin,
    :to :kotlin-language.parse-kotlin,
    :kind :dependency}
@@ -163,7 +181,9 @@
   {:from :haskell-language.syntax, :to :graph, :kind :dependency}
   {:from :application.events, :to :engine.layout, :kind :dependency}
   {:from :adapters.sketch, :to :quil, :kind :dependency}
+  {:from :adapters.viewer, :to :adapters.markup, :kind :dependency}
   {:from :haskell-language.graph-haskell, :to :graph, :kind :implements}
+  {:from :adapters.svg, :to :engine.hit, :kind :dependency}
   {:from :engine.compose, :to :domain.geom, :kind :dependency}
   {:from :main.ir-generator, :to :haskell-language.graph-haskell, :kind :dependency}
   {:from :main.ir-generator, :to :rust-language.graph-rust, :kind :dependency}
@@ -179,11 +199,14 @@
   {:from :main.uml-viewer,
    :to :python-language.source-python-external,
    :kind :dependency}
+  {:from :adapters.viewer, :to :adapters.svg, :kind :dependency}
   {:from :adapters.sketch, :to :adapters.source-window, :kind :dependency}
   {:from :adapters.sketch, :to :domain.mailbox, :kind :dependency}
   {:from :adapters.core, :to :adapters.sketch, :kind :dependency}
+  {:from :adapters.svg, :to :engine.layout, :kind :dependency}
   {:from :ruby-language.source-ruby, :to :ruby-language.rake, :kind :dependency}
   {:from :main.uml-viewer, :to :go-language.source-go, :kind :dependency}
+  {:from :adapters.core, :to :adapters.web, :kind :dependency}
   {:from :engine.hit, :to :engine.layout, :kind :dependency}
   {:from :application.document, :to :domain.policy, :kind :dependency}
   {:from :main.uml-viewer, :to :cpp-language.source-cpp, :kind :dependency}
@@ -198,6 +221,7 @@
   {:from :main.uml-viewer, :to :java-language.source-java, :kind :dependency}
   {:from :engine.curve, :to :domain.geom, :kind :dependency}
   {:from :python-language.source-python, :to :source, :kind :dependency}
+  {:from :adapters.svg, :to :domain.geom, :kind :dependency}
   {:from :engine.layout, :to :domain.config, :kind :dependency}
   {:from :engine.compose, :to :engine.curve, :kind :dependency}
   {:from :main.metrics, :to :application.ir-generator, :kind :dependency}
@@ -212,7 +236,9 @@
    :to :python-language.bridge,
    :kind :dependency}
   {:from :java-language.source-java, :to :source, :kind :dependency}
+  {:from :adapters.viewer, :to :engine.layout, :kind :dependency}
   {:from :csharp-language.source-csharp, :to :source, :kind :dependency}
+  {:from :adapters.viewer, :to :application.document, :kind :dependency}
   {:from :main.ir-generator, :to :application.ir-generator, :kind :dependency}
   {:from :main.ir-generator, :to :csharp-language.graph-csharp, :kind :dependency}
   {:from :adapters.sketch, :to :domain.policy, :kind :dependency}
@@ -221,15 +247,19 @@
   {:from :adapters.sketch, :to :application.detail, :kind :dependency}
   {:from :main.ir-generator, :to :python-language.graph-python, :kind :dependency}
   {:from :adapters.sketch, :to :application.document, :kind :dependency}
+  {:from :main.uml-viewer, :to :application.overlay, :kind :dependency}
   {:from :application.events, :to :application.overlay, :kind :dependency}
   {:from :application.events, :to :engine.hit, :kind :dependency}
   {:from :adapters.sketch, :to :application.overlay, :kind :dependency}
   {:from :application.document, :to :application.overlay, :kind :dependency}
   {:from :languages.external, :to :graph, :kind :implements}
+  {:from :adapters.web, :to :adapters.viewer, :kind :dependency}
   {:from :go-language.graph-go, :to :graph, :kind :implements}
   {:from :cpp-language.source-cpp, :to :source, :kind :implements}
   {:from :application.document, :to :domain.mailbox, :kind :dependency}
   {:from :engine.route, :to :domain.geom, :kind :dependency}
+  {:from :adapters.svg, :to :domain.config, :kind :dependency}
+  {:from :adapters.svg, :to :engine.curve, :kind :dependency}
   {:from :adapters.source-window, :to :javax.swing, :kind :dependency}
   {:from :adapters.sketch, :to :javax.swing, :kind :dependency}],
  :classes
@@ -248,6 +278,20 @@
    :lang :clojure,
    :id :adapters.draw}
   {:stereotype nil,
+   :ns "uml-viewer.adapters.markup",
+   :name "Markup",
+   :file "src/uml_viewer/adapters/markup.clj",
+   :level 3,
+   :lang :clojure,
+   :id :adapters.markup}
+  {:stereotype nil,
+   :ns "uml-viewer.adapters.palette",
+   :name "Palette",
+   :file "src/uml_viewer/adapters/palette.clj",
+   :level 3,
+   :lang :clojure,
+   :id :adapters.palette}
+  {:stereotype nil,
    :ns "uml-viewer.adapters.sketch",
    :name "Sketch",
    :file "src/uml_viewer/adapters/sketch.clj",
@@ -261,6 +305,27 @@
    :level 3,
    :lang :clojure,
    :id :adapters.source-window}
+  {:stereotype nil,
+   :ns "uml-viewer.adapters.svg",
+   :name "Svg",
+   :file "src/uml_viewer/adapters/svg.clj",
+   :level 3,
+   :lang :clojure,
+   :id :adapters.svg}
+  {:stereotype nil,
+   :ns "uml-viewer.adapters.viewer",
+   :name "Viewer",
+   :file "src/uml_viewer/adapters/viewer.clj",
+   :level 3,
+   :lang :clojure,
+   :id :adapters.viewer}
+  {:stereotype nil,
+   :ns "uml-viewer.adapters.web",
+   :name "Web",
+   :file "src/uml_viewer/adapters/web.clj",
+   :level 3,
+   :lang :clojure,
+   :id :adapters.web}
   {:stereotype nil,
    :ns "uml-viewer.application.detail",
    :name "Detail",
@@ -527,6 +592,13 @@
    :level 4,
    :lang :clojure,
    :id :main.cpp-adapter}
+  {:stereotype nil,
+   :ns "uml-viewer.main.cpp-metrics",
+   :name "CppMetrics",
+   :file "src/uml_viewer/main/cpp_metrics.clj",
+   :level 4,
+   :lang :clojure,
+   :id :main.cpp-metrics}
   {:stereotype nil,
    :ns "uml-viewer.main.discover",
    :name "Discover",

@@ -38,9 +38,11 @@ its source.
 
 ## Tech
 
-A live Quil app that lays out and draws UML from an EDN IR. A **policy** plus
-a language-specific parser write the topology; this tool displays it, routes
-the arrows, colors CRAP, and lets you click.
+A live Quil app that lays out and draws UML from an EDN IR, plus an optional
+browser renderer (`--web`) with no npm build step: the JVM serves SVG and
+pushes frames over SSE, and a vanilla JS page sends clicks and keys back. A
+**policy** plus a language-specific parser write the topology; this tool
+displays it, routes the arrows, colors CRAP, and lets you click.
 
 The IR is **topology**: the namespace tree, classes, and edges. **Metrics**
 (CC, coverage, CRAP, killed/survived/uncovered) come from `.metrics/`
@@ -180,6 +182,9 @@ clj -M:run examples/library.edn
 clj -M:run examples/uml-viewer.edn
 clj -M:run --standalone target/java.edn
 clj -M:run --screenshot=/tmp/view.png target/java.edn
+clj -M:web --standalone target/java.edn             # browser viewer
+clj -M:run --web --standalone target/java.edn       # same, without the alias
+clj -M:run --web --standalone --host 0.0.0.0 target/java.edn  # phone on the LAN
 clj -M:run --help
 ```
 
@@ -190,6 +195,14 @@ lower-left status bar reports the box count, arrow count, and zoom.
 `--screenshot` saves one fitted frame to a PNG and exits without starting
 an agent; use it for design review and keep the file out of the repository.
 The full control reference is [docs/CHEATSHEET.md](docs/CHEATSHEET.md).
+
+`--web` serves the same diagram as SVG at a fixed per-project port in
+20000–29999 (written to `.uml-viewer/web.edn`). It binds `127.0.0.1` by
+default; `--host 0.0.0.0` exposes it to the LAN for a phone or tablet, and
+`--no-open` skips the browser. A narrow window drops the inspector and keeps
+the **←** and **Fit** buttons, so boxes stay readable on a phone. The page
+has no authentication: expose it only on a trusted network. See
+[docs/web-viewer.md](docs/web-viewer.md).
 
 From **any Clojure project** you want to view (no local uml-viewer checkout
 needed):
@@ -809,10 +822,23 @@ clj -M:run diagram.edn
 `clj -M:cpp-ir <clang-uml.json> <out.edn> <source-root>` keeps qualified
 class identities, distinct overloads, relationship labels/access, and
 source file/line/column. Unsupported or unresolved entities are reported
-in `:diagnostics`. Metrics are `:unavailable` for C++, so the viewer skips
-the metric overlay and draws those boxes neutral. The converter does not
-infer missing relationships. See [docs/cpp-clang-uml.md](docs/cpp-clang-uml.md)
-for setup and limits.
+in `:diagnostics`. The converter does not infer missing relationships. See
+[docs/cpp-clang-uml.md](docs/cpp-clang-uml.md) for setup and limits.
+
+Coverage is opt-in: build with `--coverage`, run `gcov --json-format`, then
+turn those files into the overlay snapshot the viewer already reads:
+
+```bash
+clj -M:cpp-metrics --gcov target/coverage --source-root . \
+  --out .metrics/crap.edn
+clj -M:run diagram.edn
+```
+
+Rows carry `:class` and the function's source line, so overloads do not
+collapse and metrics from one class do not leak into another. CRAP uses an
+**estimated** cyclomatic complexity (decision keywords plus `&&`, `||`, and
+`?:`) — useful for ranking, not a certified metric. See
+[docs/cpp-clang-uml.md](docs/cpp-clang-uml.md#coverage-and-crap).
 
 ## Go metrics
 
@@ -834,6 +860,13 @@ go-metrics -ir examples/shop.edn -cover cover.out -mutation internal/team=/tmp/t
 
 Rows written by another language's tool are kept; go-metrics replaces only
 its own rows (`:tool "go-metrics"`).
+
+The Go scanner now also links interface implementations and cross-package
+embedding: a package whose type has every method of a two-or-method interface
+implements that package, and an embedded `other.Type` adds an inheritance
+edge. Single-method interfaces are ignored so `Error`/`String` do not link
+unrelated packages. The work follows `Conte777`'s fork, adapted to the
+package-level class model.
 
 ## IR
 
