@@ -75,7 +75,7 @@ not the generated EDN.
 | TypeScript | `:typescript` | module | NodeNext `./x.js` → `x.ts` resolved |
 | Rust | `:rust` | file | `invoke(...)` → Rust command links |
 | Java | `:java` | `.java` file | package names the class; `extends` / `implements`; test roots skipped |
-| Go | `:go` | package | exported funcs; `go.mod` module path |
+| Go | `:go` | package | exported funcs; methods `Type.Method`; `go.mod` module path |
 | Kotlin | `:kotlin` | type | `<File>Kt` for top-level functions |
 | C# | `:csharp` | type | namespaces and `using` |
 | Ruby | `:ruby` | file | Zeitwerk, Rails, Grape, Rake |
