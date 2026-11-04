@@ -17,6 +17,7 @@
 
 (def default-window {:w 1500 :h 920})
 (def compact-width 720)
+(def compact-min-zoom 0.35)
 
 (defn window [state]
   (or (:window state) default-window))
@@ -47,6 +48,23 @@
   ([state] {:state state :reply nil})
   ([state reply] {:state state :reply reply}))
 
+(defn- compact-fit
+  "`events/fit`, but do not shrink a phone diagram below a readable
+  scale. The explicit Fit button still shows the whole scene."
+  [state dims]
+  (let [fitted (events/fit state dims)
+        z (events/zoom-of fitted)]
+    (if (and (:compact? dims) (< z compact-min-zoom))
+      (let [{:keys [min-x min-y w h]} (get-in state [:scene :size])
+            cz compact-min-zoom
+            cx (+ (or min-x 0) (/ (double (or w 800)) 2.0))
+            cy (+ (or min-y 0) (/ (double (or h 600)) 2.0))]
+        (assoc fitted
+               :zoom cz
+               :cam-x (- cx (/ (double (:view-w dims)) 2.0 cz))
+               :cam-y (- cy (/ (double (:window-h dims)) 2.0 cz))))
+      fitted)))
+
 (defn- keep-fit
   "Fit the scene while the automatic fit still owns the camera, and
   refit when the window or diagram changes size. Manual pan/zoom turns
@@ -58,7 +76,7 @@
                    (and (:autofit? state)
                         (not= size (:view-size state))))]
     (cond-> (assoc state :view-size size)
-      refit? (events/fit dims))))
+      refit? (compact-fit dims))))
 
 (defn tick
   "Reload the diagram if its files changed and read the companion's mail."

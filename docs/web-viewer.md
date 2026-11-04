@@ -51,8 +51,9 @@ tap a class for its card. On the desktop a single click selects and dims
 unrelated arrows; a double click drills or opens the card.
 
 The page is responsive to real viewport changes, so rotating the device
-refits the scene. Use the browser's "Add to Home Screen" for a full-screen
-shortcut.
+refits the scene. Automatic fit stops at 35% on a phone, so a large diagram
+stays readable; the **Fit** button can still show the whole scene. Use the
+browser's "Add to Home Screen" for a full-screen shortcut.
 
 ## Interactions
 

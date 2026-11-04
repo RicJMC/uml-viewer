@@ -46,4 +46,11 @@
           {:keys [state]} (viewer/handle state {} {"type" "key" "key" "f" "ctrl" "0"})]
       (should= 390 (get-in state [:window :w]))
       (should-not (str/includes? (:frame views) "Inspector"))
-      (should (pos? (:zoom state))))))
+      (should (<= 0.35 (:zoom state)))))
+
+  (it "keeps a large phone diagram at a readable minimum zoom"
+    (let [state (-> (document/load-path (temp-diagram))
+                    (assoc :window {:w 390 :h 844})
+                    (assoc-in [:scene :size] {:w 4000 :h 3000 :min-x 0 :min-y 0}))
+          {:keys [state]} (viewer/handle state {} {"type" "resize" "w" "390" "h" "844"})]
+      (should= 0.35 (:zoom state)))))
