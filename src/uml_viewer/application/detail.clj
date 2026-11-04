@@ -1,7 +1,9 @@
 (ns uml-viewer.application.detail
-  (:require [uml-viewer.engine.hit :as hit]
+  (:require [clojure.string :as str]
+            [uml-viewer.engine.hit :as hit]
             [uml-viewer.engine.layout :as layout]
-            [uml-viewer.application.overlay :as overlay]))
+            [uml-viewer.application.overlay :as overlay]
+            [uml-viewer.graph :as graph]))
 
 (def width 640)
 (def height 700)
@@ -32,25 +34,49 @@
   (let [[out in] (get rel-phrases kind ["to" "from"])]
     (if outgoing? out in)))
 
+(defn- module-label
+  "A Rust source file is named by its filename. Other modules keep
+  the namespace. A directory always keeps the namespace."
+  [model]
+  (let [c (:class model)
+        ns-name (:ns model)
+        base (graph/file-base (:file model))]
+    (if (and base
+             (not (:drill? c))
+             (str/ends-with? (str/lower-case base) ".rs"))
+      base
+      ns-name)))
+
+(defn member-ident
+  "Source-window identity for a class card. `member-name` may be nil."
+  ([model] (member-ident model nil))
+  ([model member-name]
+   (cond-> {:ns (:ns model)}
+     (seq (str member-name)) (assoc :name (str member-name))
+     (:lang model) (assoc :lang (:lang model))
+     (:file model) (assoc :file (:file model)))))
+
 (defn model
   "Class card for the detail window, or nil if `id` is unknown."
   [scene id]
   (when-let [c (hit/class-by-id scene id)]
-    {:class c
-     :ns (overlay/class-namespace c)
-     :package (hit/package-by-id scene (:package c))
-     :title (get-in scene [:diagram :title])
-     :rels (mapv (fn [e]
-                   (let [out? (= id (:from e))
-                         oid (if out? (:to e) (:from e))
-                         other (hit/class-by-id scene oid)]
-                     {:id oid
-                      :name (or (:name other) (name oid))
-                      :kind (:kind e)
-                      :label (:label e)
-                      :outgoing? out?
-                      :phrase (rel-phrase (:kind e) out?)}))
-                 (hit/connected-edges scene id))}))
+    (cond-> {:class c
+             :ns (overlay/class-namespace c)
+             :package (hit/package-by-id scene (:package c))
+             :title (get-in scene [:diagram :title])
+             :rels (mapv (fn [e]
+                           (let [out? (= id (:from e))
+                                 oid (if out? (:to e) (:from e))
+                                 other (hit/class-by-id scene oid)]
+                             {:id oid
+                              :name (or (:name other) (name oid))
+                              :kind (:kind e)
+                              :label (:label e)
+                              :outgoing? out?
+                              :phrase (rel-phrase (:kind e) out?)}))
+                         (hit/connected-edges scene id))}
+      (:lang c) (assoc :lang (:lang c))
+      (:file c) (assoc :file (:file c)))))
 
 (defn column-layout
   "Columns from the right edge. Each has :left and :right."
@@ -171,55 +197,74 @@
             acc
             (:ops c))))
 
+(defn- package-line [model c]
+  (str "package  "
+       (or (:label (:package model))
+           (some-> (:package c) name))))
+
+(defn- emit-identity [acc model c]
+  (let [acc (emit acc :name (:name c) {})
+        acc (if (some? (:level c))
+              (emit acc :muted (str "Level " (:level c)) {})
+              acc)
+        acc (if-let [st (:stereotype c)]
+              (emit acc :muted (str "«" (name st) "»") {})
+              acc)
+        acc (if-let [label (module-label model)]
+              (emit acc :module label {:module true})
+              acc)]
+    (emit acc :muted (package-line model c) {})))
+
+(defn- emit-banner [acc model c]
+  (let [acc (if-let [t (:title model)]
+              (emit acc :muted t {})
+              acc)]
+    (if-let [s (layout/format-crap (:crap c))]
+      (emit acc :crap s {})
+      acc)))
+
+(defn- metrics-row? [c]
+  (or (seq (:ops c))
+      (crap-mu (:crap c))
+      (:coverage c)
+      (:cc c)
+      (:killed c)
+      (:survived c)))
+
+(defn- emit-fields [acc c]
+  (if (seq (:fields c))
+    (reduce (fn [acc f]
+              (emit acc :field (:text f) {}))
+            (heading acc "Fields")
+            (:fields c))
+    acc))
+
+(defn- rel-line [r]
+  (str (:phrase r) "  " (:name r)
+       (when (:label r)
+         (str "  «" (:label r) "»"))))
+
+(defn- emit-rels [acc model]
+  (if (seq (:rels model))
+    (reduce (fn [acc r]
+              (emit acc :rel (rel-line r) {:id (:id r)}))
+            (heading acc "Relationships")
+            (:rels model))
+    acc))
+
 (defn rows
   "Laid-out lines for `model`. Y is in content space (scroll separately)."
   [model]
   (when model
     (let [c (:class model)
-          pack (str "package  "
-                    (or (:label (:package model))
-                        (some-> (:package c) name)))
           acc {:rows [] :y pad}
-          acc (emit acc :name (:name c) {})
-          acc (if (some? (:level c))
-                (emit acc :muted (str "Level " (:level c)) {})
-                acc)
-          acc (if-let [st (:stereotype c)]
-                (emit acc :muted (str "«" (name st) "»") {})
-                acc)
-          acc (if-let [ns-name (:ns model)]
-                (emit acc :module ns-name {:module true})
-                acc)
-          acc (emit acc :muted pack {})
-          acc (if-let [t (:title model)]
-                (emit acc :muted t {})
-                acc)
-          acc (if-let [s (layout/format-crap (:crap c))]
-                (emit acc :crap s {})
-                acc)
-          acc (if (or (seq (:ops c))
-                      (crap-mu (:crap c))
-                      (:coverage c)
-                      (:cc c)
-                      (:killed c)
-                      (:survived c))
+          acc (emit-identity acc model c)
+          acc (emit-banner acc model c)
+          acc (if (metrics-row? c)
                 (emit-table acc c)
                 acc)
-          acc (if (seq (:fields c))
-                (reduce (fn [acc f]
-                          (emit acc :field (:text f) {}))
-                        (heading acc "Fields")
-                        (:fields c))
-                acc)
-          acc (if (seq (:rels model))
-                (reduce (fn [acc r]
-                          (let [text (str (:phrase r) "  " (:name r)
-                                          (when (:label r)
-                                            (str "  «" (:label r) "»")))]
-                            (emit acc :rel text {:id (:id r)})))
-                        (heading acc "Relationships")
-                        (:rels model))
-                acc)]
+          acc (emit-fields acc c)
+          acc (emit-rels acc model)]
       (:rows acc))))
 
 (defn content-h [rows]

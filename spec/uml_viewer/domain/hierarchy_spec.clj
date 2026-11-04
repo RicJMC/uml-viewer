@@ -165,6 +165,34 @@
       (should-not (some #{:jvm.cli :quil-swing} (map :id (:classes pkg))))
       (should (some #{[:jvm.sketch :quil] [:jvm.sketch :quil.core]} ends))))
 
+  (it "names a nested proposal group from its label"
+    (let [p (assoc policy
+              :proposals [{:id :split :name "split"
+                           :layers [{:id :jvm :label "JVM"
+                                     :nses [{:id :outer :label "Outer"
+                                             :nses [{:id :quil-swing
+                                                     :label "Quil/Swing"
+                                                     :nses [:jvm.sketch]}]}]}]}]
+              :order [:jvm])
+          g {:classes [{:id :jvm.sketch :name "Sketch" :ns "demo.jvm.sketch"}]}
+          doc (policy/apply-policy p g)
+          view (hierarchy/proposal-view doc :split)
+          outer (first (filter #(= :outer (:id %))
+                               (mapcat :classes (:packages view))))]
+      (should= "Quil/Swing" (:name (first (:contents outer))))))
+
+  (it "restamps from the first proposal when none is chosen"
+    (let [restamp (ns-resolve 'uml-viewer.domain.hierarchy 'restamp-visible-edges)
+          doc {:proposals [{:id :first :name "first"
+                            :layers [{:id :a :nses [:left]}
+                                     {:id :b :nses [:right]}]}
+                           {:id :second :name "second"
+                            :layers [{:id :b :nses [:right]}
+                                     {:id :a :nses [:left]}]}]
+               :edges [{:from :left :to :right :kind :dependency}]}
+          edges (restamp doc nil {:foreign []} [{:id :left} {:id :right}])]
+      (should (some :violating edges))))
+
   (it "does not wrap a top-level layer in a same-named inner component"
     (let [p (assoc policy
               :proposals [{:id :layers :name "layers"
@@ -351,7 +379,7 @@
       (should-be-nil (:out-deps impl))
       (should-not (some #(= :quil (% 1)) edges))))
 
-  (it "rolls a parent layer's crap up from the worst μ+σ descendant"
+  (it "rolls a parent layer's CRAP by function count"
     (let [g (update graph :classes
                     (fn [cs]
                       (mapv (fn [c]
@@ -368,10 +396,22 @@
                                 (mapcat :classes (:packages view))))
           layout (first (filter #(= :layout (:id %))
                                 (mapcat :classes (:packages view))))]
-      (should= {:mu 8.0 :max 9.0 :sigma 2.0} (:crap source))
+      (should= {:mu 4.5 :max 9.0 :sigma 3.8 :n 2} (:crap source))
       (should= {:mu 2.0 :max 3.0 :sigma 1.0} (:crap layout))))
 
-  (it "rolls a parent layer's mutants up from the worst child ratio"
+  (it "weights a directory's CRAP by function count, not by module count"
+    (let [g {:classes [{:id :engine :ns "demo.engine"
+                        :ops [{:crap 2} {:crap 2} {:crap 2}]}
+                       {:id :engine.layout :ns "demo.engine.layout"
+                        :ops [{:crap 20}]}]
+             :edges []}
+          doc (policy/apply-policy {:hierarchical true} g)
+          view (hierarchy/view-at doc [])
+          engine (first (filter #(= :engine (:id %))
+                                (mapcat :classes (:packages view))))]
+      (should= {:mu 6.5 :max 20.0 :sigma 7.8 :n 4} (:crap engine))))
+
+  (it "sums a parent layer's mutants and keeps an unscored sibling as a gap"
     (let [g (update graph :classes
                     (fn [cs]
                       (mapv (fn [c]
@@ -388,17 +428,19 @@
                                 (mapcat :classes (:packages view))))
           layout (first (filter #(= :layout (:id %))
                                 (mapcat :classes (:packages view))))]
-      (should= 1 (:killed source))
+      (should= 9 (:killed source))
       (should= 1 (:survived source))
+      (should-be-nil (:mut-gap source))
       (should= 9 (:killed layout))
       (should= 1 (:survived layout))))
 
-  (it "keeps a measured child when a sibling has no mutant counts"
+  (it "counts an unscored sibling as one failed trial per function"
     (let [g (update graph :classes
                     (fn [cs]
                       (mapv (fn [c]
                               (case (:id c)
                                 :layout (assoc c :killed 9 :survived 1)
+                                :source.clojure (assoc c :ops [{:name "a"} {:name "b"}])
                                 :source (assoc c :killed 8 :survived 0)
                                 c))
                             cs)))
@@ -410,10 +452,101 @@
                                 (mapcat :classes (:packages view))))]
       (should= 8 (:killed source))
       (should= 0 (:survived source))
+      (should= 2 (:mut-gap source))
       (should= 9 (:killed layout))
       (should= 1 (:survived layout))))
 
-  (it "treats a child with no CRAP as the worst (red) score"
+  (it "keeps a source file's own CRAP when a nested file is worse"
+    (let [g (update graph :classes
+                    (fn [cs]
+                      (mapv (fn [c]
+                              (case (:id c)
+                                :source.clojure (assoc c :crap {:mu 8.0 :max 9.0 :sigma 2.0})
+                                :source (assoc c :crap {:mu 1.0 :max 1.0 :sigma 0.0})
+                                c))
+                            cs)))
+          doc (policy/apply-policy policy g)
+          inner (hierarchy/view-at doc [:source])
+          source (first (filter #(= :source (:id %))
+                                (mapcat :classes (:packages inner))))
+          child (first (filter #(= :source.clojure (:id %))
+                               (mapcat :classes (:packages inner))))]
+      (should= {:mu 1.0 :max 1.0 :sigma 0.0} (:crap source))
+      (should= {:mu 8.0 :max 9.0 :sigma 2.0} (:crap child))))
+
+  (it "keeps a source file's own CRAP when a nested file has none"
+    (let [g (update graph :classes
+                    (fn [cs]
+                      (mapv (fn [c]
+                              (if (= :source (:id c))
+                                (assoc c :crap {:mu 1.0 :max 1.0 :sigma 0.0})
+                                c))
+                            cs)))
+          doc (policy/apply-policy policy g)
+          inner (hierarchy/view-at doc [:source])
+          root (hierarchy/view-at doc [])
+          source (first (filter #(= :source (:id %))
+                                (mapcat :classes (:packages inner))))
+          directory (first (filter #(= :source (:id %))
+                                   (mapcat :classes (:packages root))))]
+      (should= {:mu 1.0 :max 1.0 :sigma 0.0} (:crap source))
+      (should= {:mu 10.5 :max 20.0 :sigma 9.5 :n 2} (:crap directory))))
+
+  (it "keeps a source file's own mutants when a nested file is worse"
+    (let [g (update graph :classes
+                    (fn [cs]
+                      (mapv (fn [c]
+                              (case (:id c)
+                                :source.clojure (assoc c :killed 1 :survived 1)
+                                :source (assoc c :killed 8 :survived 0)
+                                c))
+                            cs)))
+          doc (policy/apply-policy policy g)
+          inner (hierarchy/view-at doc [:source])
+          source (first (filter #(= :source (:id %))
+                                (mapcat :classes (:packages inner))))]
+      (should= 8 (:killed source))
+      (should= 0 (:survived source))))
+
+  (it "names every Rust file by its filename and the directory by the namespace"
+    (let [g {:classes [{:id :rust :name "Rust"
+                        :ns "bookwriter.rust"
+                        :file "src-tauri/src/lib.rs"}
+                       {:id :rust.main :name "Main"
+                        :ns "bookwriter.rust.main"
+                        :file "src-tauri/src/main.rs"}
+                       {:id :rust.proto :name "Proto"
+                        :ns "bookwriter.rust.proto"
+                        :file "src-tauri/src/proto.rs"}]
+             :edges []}
+          doc (policy/apply-policy {:title "Bookwriter" :hierarchical true} g)
+          root (hierarchy/view-at doc [])
+          inner (hierarchy/view-at doc [:rust])
+          directory (first (filter #(= :rust (:id %))
+                                   (mapcat :classes (:packages root))))
+          named (fn [id classes]
+                  (:name (first (filter #(= id (:id %)) classes))))]
+      (should= "Rust" (:name directory))
+      (should= "lib.rs" (named :rust (mapcat :classes (:packages inner))))
+      (should= "main.rs" (named :rust.main (mapcat :classes (:packages inner))))
+      (should= "proto.rs" (named :rust.proto (mapcat :classes (:packages inner))))
+      (should= "lib.rs" (named :rust (:contents directory)))
+      (should= "main.rs" (named :rust.main (:contents directory)))
+      (should= "proto.rs" (named :rust.proto (:contents directory)))))
+
+  (it "keeps a hyphenated Clojure filename as the namespace segment"
+    (let [g {:classes [{:id :graph-python
+                        :name "GraphPython"
+                        :ns "uml-viewer.python-language.graph-python"
+                        :file "src/uml_viewer/python_language/graph_python.clj"}]
+             :edges []}
+          doc (policy/apply-policy {:hierarchical true} g)
+          view (hierarchy/view-at doc [])
+          c (first (filter #(= :graph-python (:id %))
+                           (mapcat :classes (:packages view))))]
+      (should= "GraphPython" (:name c))))
+
+  (it "tints a parent with a child that has no CRAP, once per function"
     (let [g (update graph :classes
                     (fn [cs]
                       (mapv (fn [c]
@@ -428,7 +561,7 @@
                                 (mapcat :classes (:packages view))))
           layout (first (filter #(= :layout (:id %))
                                 (mapcat :classes (:packages view))))]
-      (should-be-nil (:crap source))
+      (should= {:mu 10.5 :max 20.0 :sigma 9.5 :n 2} (:crap source))
       (should= {:mu 2.0 :max 3.0 :sigma 1.0} (:crap layout))))
 
   (it "titles modules with the last ns segment, not the component prefix"
@@ -449,6 +582,13 @@
       (should= "Layout" (:name layout))
       (should= "Layout" (:name (first (filter #(= :engine.layout (:id %))
                                               (:contents engine)))))))
+
+  (it "keeps a capital already present in a module name"
+    (let [g {:classes [{:id :tauriFs :name "ignored" :ns "bookwriter.tauriFs"}]
+             :edges []}
+          doc (policy/apply-policy {:title "Demo" :hierarchical true} g)
+          box (first (mapcat :classes (:packages (hierarchy/view-at doc []))))]
+      (should= "TauriFs" (:name box))))
 
   (it "keeps arrows between classes in the same view"
     (let [g {:classes [{:id :engine :name "Engine" :ns "demo.engine"}

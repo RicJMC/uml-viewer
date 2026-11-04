@@ -1,17 +1,21 @@
 (ns uml-viewer.main.ir-generator
   (:require [clojure.java.io :as io]
-            [uml-viewer.clojure-language.graph-clojure :as clj-graph]
-            [uml-viewer.languages.external :as external]
-            [uml-viewer.python-language.graph-python :as python-graph]
-            [uml-viewer.application.ir-generator :as ir-generator])
+            [uml-viewer.application.ir-generator :as ir-generator]
+            [uml-viewer.clojure-language.graph-clojure]
+            [uml-viewer.graph :as graph]
+            [uml-viewer.languages.external]
+            [uml-viewer.python-language.graph-python]
+            [uml-viewer.python-language.graph-python-external]
+            [uml-viewer.rust-language.graph-rust]
+            [uml-viewer.typescript-language.graph-typescript])
   (:gen-class))
 
-(defn graph-for [policy]
-  (case (or (:lang policy) :clojure)
-    :clojure clj-graph/impl
-    :python python-graph/impl
-    :typescript external/typescript-graph
-    (throw (ex-info "Unsupported policy language" {:lang (:lang policy)}))))
+(defn graph-for
+  "Language graph selected by the policy, or nil when no scanner is installed."
+  [policy]
+  (let [lang (keyword (or (:lang policy) :clojure))]
+    (or (graph/lookup lang)
+        (throw (ex-info (str "no LanguageGraph for " lang) {:lang lang})))))
 
 (defn- default-policy
   "This repo keeps its policy under examples/. A discovered project writes
@@ -24,13 +28,23 @@
       (.isFile (io/file plain)) plain
       :else example)))
 
+(defn- generation-plan
+  "Policy path, output path, and language graph chosen from `args`.
+  Does not write a file."
+  [args]
+  (let [policy-path (or (first args) (default-policy))
+        policy (ir-generator/read-policy policy-path)
+        lang (keyword (or (:lang policy) :clojure))]
+    {:policy-path policy-path
+     :out (or (second args) (:out policy) "examples/uml-viewer.edn")
+     :impl (or (graph/lookup lang)
+               (throw (ex-info (str "no LanguageGraph for " lang) {:lang lang}))) }))
+
 (defn -main [& args]
   (let [report? (boolean (some #{"--report"} args))
         args (remove #{"--report"} args)
-        path (or (first args) (default-policy))
-        policy (ir-generator/read-policy path)
-        implementation (graph-for policy)
-        {:keys [out doc]} (ir-generator/generate-with-doc implementation path (second args))]
+        {:keys [policy-path out impl]} (generation-plan args)
+        {:keys [out doc]} (ir-generator/generate-with-doc impl policy-path out)]
     (println "Wrote" out)
     (when report?
       (doseq [line (ir-generator/report doc)]

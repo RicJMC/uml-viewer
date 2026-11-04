@@ -6,9 +6,12 @@
             [uml-viewer.application.ir-generator :as ir-generator]
             [uml-viewer.clojure-language.source-clojure :as clj-source]
             [uml-viewer.domain.log :as log]
-            [uml-viewer.languages.external :as external]
             [uml-viewer.main.ir-generator :as generator]
-            [uml-viewer.python-language.source-python :as python-source])
+            [uml-viewer.python-language.source-python]
+            [uml-viewer.python-language.source-python-external]
+            [uml-viewer.rust-language.source-rust]
+            [uml-viewer.source :as source]
+            [uml-viewer.typescript-language.source-typescript])
   (:import (java.io File)
            (java.lang ProcessBuilder ProcessBuilder$Redirect))
   (:gen-class))
@@ -54,12 +57,16 @@
     (.put (.environment pb) foreground-env "1")
     (.start pb)))
 
+(defrecord DocumentSource [lang impl]
+  source/LanguageSource
+  (locate [_ ident] (source/locate impl ident))
+  (extract [_ text ident] (source/extract impl text ident))
+  (start-line [_ text ident] (source/start-line impl text ident))
+  (title [_ ident] (source/title impl ident)))
+
 (defn source-for [document]
-  (case (or (:lang document) :clojure)
-    :clojure clj-source/impl
-    :python (python-source/create (:source-root document) (:source-prefix document))
-    :typescript external/typescript-source
-    (throw (ex-info "Unsupported document language" {:lang (:lang document)}))))
+  (let [lang (keyword (or (:lang document) :clojure))]
+    (->DocumentSource lang (or (source/lookup lang) clj-source/impl))))
 
 (defn regenerate! [path]
   (let [document (edn/read-string (slurp path))

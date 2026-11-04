@@ -50,7 +50,7 @@
 
 (defn- argv-for [lang args]
   (case (keyword lang)
-    :typescript (node-argv args)
+    (:typescript :typescript-external) (node-argv args)
     (throw (ex-info (str "no external analyzer for " lang) {:lang lang}))))
 
 (defn- id-keyword [value]
@@ -133,8 +133,10 @@
 (def typescript-graph (->ExternalGraph :typescript))
 (def typescript-source (->ExternalSource :typescript))
 
-(graph/register! :typescript typescript-graph)
-(source/register! :typescript typescript-source)
+;; Keep the Node analyzer available beside the built-in TypeScript scanner.
+;; Registering under :typescript would replace the native scanner at load.
+(graph/register! :typescript-external typescript-graph)
+(source/register! :typescript-external typescript-source)
 
 (defn dispatch-source
   "LanguageSource that forwards to the extractor for `:lang` on the ident.

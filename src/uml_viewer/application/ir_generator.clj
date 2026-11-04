@@ -4,8 +4,8 @@
             [clojure.pprint :as pprint]
             [clojure.string :as str]
             [uml-viewer.application.metrics :as metrics]
-            [uml-viewer.graph :as graph]
-            [uml-viewer.domain.policy :as policy]))
+            [uml-viewer.domain.policy :as policy]
+            [uml-viewer.graph :as graph]))
 
 (defn read-policy [path]
   (edn/read-string (slurp path)))
@@ -18,9 +18,32 @@
                  pprint/*print-right-margin* 90]
          (with-out-str (pprint/pprint doc)))))
 
+(defn- scan-source
+  "One `:sources` entry. `:prefix` on the entry is that tree's namespace
+  root; the policy `:prefix` is what `id-of` strips."
+  [policy source]
+  (let [lang (keyword (or (:lang source) (:lang policy) :clojure))
+        impl (or (graph/lookup lang)
+                 (throw (ex-info (str "no LanguageGraph for " lang) {:lang lang})))]
+    (graph/scan impl
+                (or (:root source) (:src source) (:src policy) "src")
+                {:prefix (or (:prefix policy) "uml-viewer")
+                 :ns-prefix (or (:prefix source) (:prefix policy) "uml-viewer")
+                 :lang lang})))
+
+(defn scan-policy
+  "Scan `policy`. `:sources` merges one scanner per entry.
+  Otherwise `graph-impl` scans `:src` with the policy prefix."
+  [graph-impl policy]
+  (if (seq (:sources policy))
+    (graph/merge-scans (mapv #(scan-source policy %) (:sources policy)))
+    (graph/scan graph-impl
+                (or (:src policy) "src")
+                {:prefix (or (:prefix policy) "uml-viewer")})))
+
 (defn- annotate
   "The viewer reads `:lang` and `:src` off the IR to open the right file.
-   Language graphs that report them (Python) win; the policy fills the rest."
+  Language graphs that report them (Python) win; the policy fills the rest."
   [doc policy graph]
   (merge doc
          (select-keys graph [:lang :source-root :source-prefix :metrics-mode])
@@ -30,41 +53,46 @@
 (defn- build
   "Scan and apply policy. `:members` is present for languages that report them."
   [graph-impl policy]
-  (let [root (or (:src policy) "src")
-        opts {:prefix (or (:prefix policy) "uml-viewer")}
-        graph (graph/scan graph-impl root opts)]
+  (let [graph (scan-policy graph-impl policy)]
     {:graph graph
      :doc (annotate (policy/apply-policy policy graph) policy graph)}))
 
 (defn document
-  "Scan source with `graph-impl` and apply `policy`. Returns the IR document."
+  "Scan source with `graph-impl` and apply `policy`. Returns the IR document.
+  A policy with `:sources` selects each scanner itself."
   [graph-impl policy]
   (:doc (build graph-impl policy)))
 
 (defn- generate-all
   "Build, write, and return both the output path and the IR document.
-   `opts` may include `:metrics-root` (default user.dir) for the static member snapshot."
+  `opts` may include `:metrics-root` (default user.dir) for the static
+  member snapshot."
   [graph-impl policy-path out-path opts]
-   (let [policy (read-policy policy-path)
-         {:keys [graph doc]} (build graph-impl policy)
-         extra (policy/unassigned policy graph)
-         doc (assoc doc :policy-file policy-path)
-         out (or out-path (:out policy) "examples/uml-viewer.edn")
-         members (:members graph)]
-     (when (seq extra)
-       (binding [*out* *err*]
-         (println "Unassigned namespaces:"
-                  (str/join ", " (map :ns extra)))))
-     (when (seq members)
-       (metrics/write-static! (or (:metrics-root opts)
-                                  (System/getProperty "user.dir"))
-                              members))
-     (io/make-parents out)
-     (spit out (emit doc))
-     {:out out :doc doc}))
+  (let [policy (read-policy policy-path)
+        {:keys [graph doc]} (build graph-impl policy)
+        extra (policy/unassigned policy graph)
+        doc (assoc doc :policy-file policy-path)
+        out (or out-path (:out policy))
+        members (:members graph)]
+    (when-not out
+      (throw (ex-info "no output path: pass one or set :out in the policy"
+                      {:policy policy-path})))
+    (when (seq extra)
+      (binding [*out* *err*]
+        (println "Unassigned namespaces:"
+                 (str/join ", " (map :ns extra)))))
+    (when (seq members)
+      (metrics/write-static! (or (:metrics-root opts)
+                                 (System/getProperty "user.dir"))
+                             members))
+    (io/make-parents out)
+    (spit out (emit doc))
+    {:out out :doc doc}))
 
 (defn generate
-  "Write the IR document for `policy-path` using `graph-impl`. Returns the output path."
+  "Write the IR document for `policy-path` using `graph-impl`. Returns the output path.
+  The path is `out-path` or the policy `:out`. The caller supplies a path when
+  both are absent. A policy with `:sources` selects each scanner itself."
   ([graph-impl policy-path] (generate graph-impl policy-path nil))
   ([graph-impl policy-path out-path] (generate graph-impl policy-path out-path {}))
   ([graph-impl policy-path out-path opts]
@@ -72,7 +100,7 @@
 
 (defn generate-with-doc
   "Like `generate`, but returns `{:out path :doc document}` so callers can
-   read the counts without scanning the source twice."
+  read the counts without scanning the source twice."
   ([graph-impl policy-path] (generate-with-doc graph-impl policy-path nil {}))
   ([graph-impl policy-path out-path] (generate-with-doc graph-impl policy-path out-path {}))
   ([graph-impl policy-path out-path opts]

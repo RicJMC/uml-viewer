@@ -74,7 +74,7 @@
       (should= 2 (:complexity (member g "app.loan" "issue")))))
 
   (it "opens a function at its line"
-    (let [found (source/member-source {:lang :typescript
+    (let [found (source/member-source {:lang :typescript-external
                                        :src ts-src
                                        :prefix ""
                                        :ns "app.loan"
