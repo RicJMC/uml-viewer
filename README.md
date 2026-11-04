@@ -862,7 +862,7 @@ Rows written by another language's tool are kept; go-metrics replaces only
 its own rows (`:tool "go-metrics"`).
 
 The Go scanner now also links interface implementations and cross-package
-embedding: a package whose type has every method of a two-or-method interface
+embedding: a package whose type has every method of a two-or-more-method interface
 implements that package, and an embedded `other.Type` adds an inheritance
 edge. Single-method interfaces are ignored so `Error`/`String` do not link
 unrelated packages. The work follows `Conte777`'s fork, adapted to the
