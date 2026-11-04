@@ -6,8 +6,12 @@
  :hierarchical true
  :foreign [quil javax.swing]
  :order [main adapters application engine source graph
-         clojure-language typescript-language rust-language python-language domain]
- :levels [[domain source graph clojure-language typescript-language rust-language python-language]
+         clojure-language typescript-language rust-language python-language
+         csharp-language go-language haskell-language kotlin-language
+         ruby-language cpp-language domain]
+ :levels [[domain source graph clojure-language typescript-language rust-language
+           python-language csharp-language go-language haskell-language
+           kotlin-language ruby-language cpp-language]
           [engine]
           [application]
           [adapters]
