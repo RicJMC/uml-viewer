@@ -71,10 +71,47 @@ absolute source root, so regenerate it on each machine. The adapter does not
 infer missing relationships. Unsupported
 element or relationship kinds, unresolved endpoints, and missing source
 locations are reported in the EDN `:diagnostics`; duplicate class identities
-are rejected. Metrics are explicitly `:unavailable` for C++.
-The viewer skips its Clojure metric overlay for C++ documents: that overlay
-groups operations by name and would collapse C++ overloads. Clojure diagrams
-still use the overlay.
+are rejected. Metrics are opt-in; without a `.metrics/crap.edn` the boxes stay
+neutral. The overlay now joins C++ rows by class and source line, so overloads
+do not collapse and one class's metrics do not leak into another.
+
+## Coverage and CRAP
+
+Build with GCC/Clang coverage, run `gcov --json-format`, and convert:
+
+```bash
+cmake -S . -B build -DCMAKE_CXX_FLAGS="--coverage -O0"
+cmake --build build
+ctest --test-dir build          # or run the test binary directly
+cd build && gcov --json-format $(find . -name '*.gcno')
+cd ..
+clj -M:cpp-metrics --gcov build --source-root . --out .metrics/crap.edn
+clj -M:run diagram.edn
+```
+
+`clj -M:cpp-metrics` reads `.gcov.json.gz`/`.json` files, keeps only files
+under `--source-root`, and writes the same `.metrics/crap.edn` shape the
+overlay already reads. Each row carries:
+
+| Key | Meaning |
+|-----|---------|
+| `:namespace` | Enclosing namespace, dotted (`app.detail`). |
+| `:class` | Enclosing class, or absent for a free function. |
+| `:name` | Method name (constructors keep the class name). |
+| `:line` | Function start line; joins the IR op's `:source-ident :line`. |
+| `:coverage` | Executed / executable lines, 0–100. |
+| `:complexity` | **Estimated** cyclomatic complexity. |
+| `:crap` | `cc² · (1 − coverage)³ + cc`. |
+| `:statements`, `:covered` | Raw line counts for class roll-up. |
+
+The complexity estimate counts `if`, `for`, `while`, `case`, `catch`, `&&`,
+`||`, and `?:` after masking comments and literals. It is useful for ranking
+and spotting hot spots, but it is not a certified CC count and does not
+understand templates, macros, or exception specifications. Use a dedicated
+analyser (lizard, clang-tidy, pmccabe) if you need an auditable number.
+
+Mutation testing for C++ is not implemented. The viewer shows CRAP and
+coverage dots; mutation dots stay neutral.
 
 This slice does not model templates as specializations, enums, free functions,
 or non-class UML entities; clang-uml elements outside `class` are diagnosed

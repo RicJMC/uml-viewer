@@ -1,4 +1,4 @@
-{:paths ["src"]
+{:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.12.0"}
         org.clojure/data.json {:mvn/version "2.5.1"}}
  :aliases
@@ -33,6 +33,7 @@
   :cpp-ir {:main-opts ["-m" "uml-viewer.main.cpp-adapter"]}
   :discover {:main-opts ["-m" "uml-viewer.main.discover"]}
   :metrics {:main-opts ["-m" "uml-viewer.main.metrics"]}
+  :cpp-metrics {:main-opts ["-m" "uml-viewer.main.cpp-metrics"]}
   :run {:extra-deps {quil/quil {:mvn/version "4.3.1563"}}
         :main-opts ["-m" "uml-viewer.main.uml-viewer"]}
   :uml-viewer {:extra-deps {quil/quil {:mvn/version "4.3.1563"}}

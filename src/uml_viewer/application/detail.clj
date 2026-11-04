@@ -216,8 +216,10 @@
         acc (if-let [label (module-label model)]
               (emit acc :module label {:module true})
               acc)
-        acc (if (= :unavailable (:metrics-status c))
-              (emit acc :muted "Metrics unavailable for this C++ diagram" {})
+        acc (if (and (or (= :cpp (:lang c)) (= :cpp (:language c)))
+                     (nil? (:crap c))
+                     (nil? (:coverage c)))
+              (emit acc :muted "No C++ coverage snapshot loaded" {})
               acc)]
     (emit acc :muted (package-line model c) {})))
 

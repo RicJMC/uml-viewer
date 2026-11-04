@@ -88,7 +88,7 @@
           rows (detail/rows (detail/model scene :app.Controller))
           class-row (first (filter #(= :name (:kind %)) rows))
           overload-rows (filter #(= "run" (:op-name %)) rows)
-          metric-note (first (filter #(= "Metrics unavailable for this C++ diagram"
+          metric-note (first (filter #(= "No C++ coverage snapshot loaded"
                                          (:text %)) rows))]
       (should= 7 (get-in (detail/source-at rows (:y class-row)) [:line]))
       (should= [9 10] (mapv #(get-in (detail/source-at rows (:y %)) [:line]) overload-rows))

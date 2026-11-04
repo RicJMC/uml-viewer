@@ -223,3 +223,38 @@
       (should= 2 (:killed bar))
       (should (some #(= "place" (:name %)) (:ops bar)))
       (should-not (:cc (:Foo by-id))))))
+
+(describe "overlay C++ metrics"
+  (it "joins overloads by source line and keeps another class out"
+    (let [doc {:hierarchical true
+               :language :cpp
+               :classes [{:id :app.Controller :name "Controller" :ns "app" :language :cpp
+                          :ops [{:name "run" :source-ident {:line 9}}
+                                {:name "run" :source-ident {:line 10}}
+                                {:name "resolve" :source-ident {:line 11}}]}
+                         {:id :app.Other :name "Other" :ns "app" :language :cpp
+                          :ops [{:name "run" :source-ident {:line 20}}]}]
+               :edges []}
+          metrics {:crap {"app" [{:name "run" :class "Controller" :line 9
+                                  :complexity 2 :coverage 100.0 :crap 2.0}
+                                 {:name "run" :class "Controller" :line 10
+                                  :complexity 4 :coverage 50.0 :crap 8.0}
+                                 {:name "resolve" :class "Controller" :line 11
+                                  :complexity 1 :coverage 0.0 :crap 2.0}
+                                 {:name "run" :class "Other" :line 20
+                                  :complexity 9 :coverage 100.0 :crap 9.0}]}
+                   :mutate {}}
+          painted (overlay/apply-metrics doc metrics)
+          by-id (into {} (map (juxt :id identity) (:classes painted)))
+          controller (:app.Controller by-id)
+          other (:app.Other by-id)
+          ops (into {} (map (juxt #(get-in % [:source-ident :line]) identity)
+                            (:ops controller)))]
+      (should= 2.0 (:crap (ops 9)))
+      (should= 8.0 (:crap (ops 10)))
+      (should= 2.0 (:crap (ops 11)))
+      (should= 7 (:cc controller))
+      (should= 4.0 (get-in controller [:crap :mu]))
+      (should= "current" (:metrics-status controller))
+      (should= 9.0 (:crap (first (:ops other))))
+      (should= 9 (:cc other)))))

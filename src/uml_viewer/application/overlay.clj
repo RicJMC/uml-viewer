@@ -101,10 +101,14 @@
               (:forms snapshot))))
 
 (defn class-namespace
-  "Snapshot namespace for a class: authored or generated `:ns`."
+  "Snapshot namespace for a class: authored or generated `:ns`,
+  normalized to dots so C++ `app::detail` and PHP `App\\Foo` join their
+  snapshots."
   [c]
   (when-let [ns-name (:ns c)]
-    (str ns-name)))
+    (-> (str ns-name)
+        (str/replace "::" ".")
+        (str/replace "\\" "."))))
 
 (defn- normalize-ns
   "Crapper separates Rust with `::`, names a Go package by its import path
@@ -206,7 +210,8 @@
   (cond-> (assoc op :text (or (:text op) (:name op)))
     crap-fn (assoc :cc (:complexity crap-fn)
                    :crap (:crap crap-fn)
-                   :coverage (pct->ratio (:coverage crap-fn)))
+                   :coverage (pct->ratio (:coverage crap-fn))
+                   :metrics-status "current")
     mut-fn (assoc :killed (or (:killed mut-fn) 0)
                   :survived (or (:survived mut-fn) 0)
                   :uncovered (or (:uncovered mut-fn) 0)
@@ -216,21 +221,39 @@
 
 (defn- ops-for-class [c crap-fns mut-fns]
   (let [by-name (into {} (map (juxt :name identity) crap-fns))
-        names (distinct (concat (map :name (:ops c))
-                                (map :name crap-fns)
-                                (keys mut-fns)))]
-    (mapv (fn [nm]
-            (let [existing (first (filter #(= nm (:name %)) (:ops c)))
-                  base (or existing {:name nm :text nm})]
-              (overlay-op base (get by-name nm) (get mut-fns nm))))
-          names)))
+        by-line (into {} (keep (fn [f]
+                                (when-let [line (:line f)] [line f]))
+                              crap-fns))
+        existing (:ops c)
+        known (set (map :name existing))
+        extra (remove known (distinct (concat (map :name crap-fns)
+                                              (keys mut-fns))))
+        ops (concat existing (map (fn [nm] {:name nm :text nm}) extra))]
+    (mapv (fn [op]
+            (let [nm (:name op)
+                  ;; Overloads share a name; their source line tells them apart.
+                  score (or (some-> (:source-ident op) :line by-line)
+                            (get by-name nm))]
+              (overlay-op op score (get mut-fns nm))))
+          ops)))
+
+(defn- metric-owner?
+  "A metric entry with a `:class` belongs to that class only; entries
+  without one keep the namespace-wide behaviour of the other languages."
+  [c entry]
+  (or (nil? (:class entry))
+      (= (:class entry) (:name c))
+      (and (:qualified-name entry)
+           (= (:qualified-name entry) (:qualified-name c)))))
 
 (defn overlay-class
   ([c crap-by-ns mutate-by-ns]
    (overlay-class c crap-by-ns mutate-by-ns nil))
   ([c crap-by-ns mutate-by-ns owned]
    (let [nss (if (nil? owned) [(class-namespace c)] owned)
-         crap-fns (vec (mapcat #(or (get crap-by-ns %) []) nss))
+         crap-fns (->> (mapcat #(or (get crap-by-ns %) []) nss)
+                       (filter #(metric-owner? c %))
+                       vec)
          mut-fns (mutate-by-fn (merge-mutate (map #(get mutate-by-ns %) nss)))
          scores (keep :crap crap-fns)
          coverages (keep :coverage crap-fns)
@@ -243,7 +266,8 @@
          sites (apply + 0 (map counted-sites (vals mut-fns)))]
      (cond-> c
        (seq scores) (assoc :crap (class-crap scores)
-                           :cc (apply + (map :complexity crap-fns)))
+                           :cc (apply + (map :complexity crap-fns))
+                           :metrics-status "current")
        (seq coverages) (assoc :coverage (pct->ratio
                                           (/ (reduce + coverages) (count coverages))))
        (pos? statements) (assoc :coverage (/ (double covered) statements))
@@ -280,8 +304,7 @@
 
 (defn- apply-scores
   [doc metrics]
-  (if (or (= :cpp (:language doc))
-          (and (empty? (:crap metrics)) (empty? (:mutate metrics))))
+  (if (and (empty? (:crap metrics)) (empty? (:mutate metrics)))
     doc
     (let [owners (owners-by-ns (doc-classes doc)
                                (:prefix doc)

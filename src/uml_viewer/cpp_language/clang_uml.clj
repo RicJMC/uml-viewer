@@ -82,7 +82,6 @@
              :qualified-name qualified
              :clang-uml-id (str (:id element))
              :language :cpp
-             :metrics-status :unavailable
              :ops (->> (:methods element)
                        (map-indexed (partial convert-method root qualified))
                        vec)
@@ -193,7 +192,6 @@
        :hierarchical true
        :preserve-parallel-edges true
        :source-root root
-       :metrics-status :unavailable
        :classes converted
        :edges edges
        :order (->> converted (map :id) (map #(keyword (first (str/split (name %) #"\.")))) distinct vec)
