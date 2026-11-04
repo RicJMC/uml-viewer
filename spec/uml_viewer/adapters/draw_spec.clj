@@ -391,8 +391,9 @@
       (fn [log]
         (call 'draw-sidebar {:selected nil :scene (scene)})
         (should-contain "Inspector" (texts log))
-        (should (some #(re-find #"Click a component" %) (texts log)))
-        (should (some #(re-find #"Double-click a component" %) (texts log))))))
+        (should (some #(re-find #"Click a box" %) (texts log)))
+        (should (some #(re-find #"Double-click a box" %) (texts log)))
+        (should (some #(re-find #"LEGEND" %) (texts log))))))
 
   (it "shows class name, package, CRAP, and members"
     (record-quil
@@ -432,8 +433,8 @@
   (it "draws nothing without at least two points"
     (record-quil
       (fn [log]
-        (call 'draw-edge {:points [] :from :a :to :b} false (scene))
-        (call 'draw-edge {:points [[0 0]] :from :a :to :b} false (scene))
+        (call 'draw-edge {:points [] :from :a :to :b} false false (scene))
+        (call 'draw-edge {:points [[0 0]] :from :a :to :b} false false (scene))
         (should= [] @log))))
 
   (it "uses gold when selected and muted otherwise, and draws a head"
@@ -441,26 +442,30 @@
       (fn [log]
         (let [s (scene)
               e (first (filter #(= :inheritance (:kind %)) (:edges s)))]
-          (call 'draw-edge e true s)
+          (call 'draw-edge e true false s)
           (should (painted? log :stroke draw/gold))
           (should-contain [:stroke-weight 2.2] @log)
           (should-contain :triangle (kinds log))
           (reset! log [])
-          (call 'draw-edge (dissoc e :head) false s)
+          (call 'draw-edge (dissoc e :head) false false s)
           (should (painted? log :stroke draw/muted))
           (should-contain [:stroke-weight 1.4] @log)
-          (should-not-contain :triangle (kinds log))))))
+          (should-not-contain :triangle (kinds log))
+          (reset! log [])
+          (call 'draw-edge (dissoc e :head) false true s)
+          (should-not (painted? log :stroke draw/muted))
+          (should (painted? log :stroke draw/dim-edge))))))
 
   (it "paints a violating dependency red, bold red when selected"
     (record-quil
       (fn [log]
         (let [s (scene)
               e (assoc (first (:edges s)) :violating true :kind :dependency)]
-          (call 'draw-edge e false s)
+          (call 'draw-edge e false false s)
           (should (painted? log :stroke draw/violation))
           (should-contain [:stroke-weight 2.0] @log)
           (reset! log [])
-          (call 'draw-edge e true s)
+          (call 'draw-edge e true false s)
           (should (painted? log :stroke draw/violation-hot))
           (should-contain [:stroke-weight 3.2] @log)))))
 

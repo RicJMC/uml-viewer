@@ -148,6 +148,7 @@
            :doc doc
            :focus []
            :scene (compile-view doc root [] false)
+           :fit? true
            :selected nil
            :hover nil
            :detail-id nil
@@ -188,6 +189,10 @@
                  :cam-x (or (:cam-x snap) 0)
                  :cam-y (or (:cam-y snap) 0)
                  :zoom (or (:zoom snap) 1.0)
+                 ;; A session seeded without a zoom has no camera worth
+                 ;; keeping; fit it on the next frame.
+                 :fit? (nil? (:zoom snap))
+                 :autofit? false
                  :selected (:selected snap)
                  :detail-id (:detail-id snap))
           drop-missing-detail))))
@@ -253,6 +258,9 @@
                                                 {:proposal-id (:proposal-id state)
                                                  :declutter (:declutter state)
                                                  :open-layer (:open-layer state)})
+                           ;; A regenerated IR may have a new shape; metrics
+                           ;; only touch the colors and keep the camera.
+                           :fit? (not= mtime (:mtime state))
                            :error nil)
                     drop-missing-detail))
               (catch Exception e

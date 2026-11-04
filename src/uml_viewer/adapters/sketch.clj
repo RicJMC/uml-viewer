@@ -48,7 +48,7 @@
        "   diagram above Proposals to return to the namespace tree. If instructed,\n"
        "   add a named proposal to :proposals in the policy (default name is a\n"
        "   timestamp) and regenerate the IR.\n"
-       "TypeScript, Rust, Python, Go, Kotlin, C#, Ruby, and Haskell are scanners\n"
+       "TypeScript, Rust, Python, Java, Go, Kotlin, C#, Ruby, and Haskell are scanners\n"
        "beside Clojure. C++ is converted from clang-uml JSON by clj -M:cpp-ir.\n"
        "A Clojure project keeps\n"
        ":lang :clojure (the default) and the CRAP and mutation steps below.\n"
@@ -59,6 +59,9 @@
        "module id are still the tree. Do not invent packages. A TypeScript\n"
        "invoke(\"name\") depends on the Rust #[tauri::command] of that name.\n"
        "Python is one class per .py module. import and from-import are dependencies.\n"
+       "Java is one class per .java file, named by its package. extends is\n"
+       "inheritance and implements is implements. Imports and same-package\n"
+       "names are dependencies.\n"
        "Go is one class per package. Kotlin and C# are one class per type.\n"
        "Ruby is one class per file. Haskell is one class per module.\n"
        "class Child(Base) is inheritance when Base is a project module. A base of\n"
@@ -645,8 +648,12 @@
      (document/waiting-state path))))
 
 (defn- view-dims []
-  (let [w (q/width)
-        h (q/height)]
+  (let [[w h] (try
+                [(q/width) (q/height)]
+                (catch Throwable _
+                  [window-width window-height]))
+        w (or w window-width)
+        h (or h window-height)]
     {:window-w w
      :window-h h
      :view-w (max 0 (- w layout/sidebar-w))}))
@@ -675,13 +682,26 @@
       (close-detail-window!))
     state))
 
+(defn- fit-state
+  "Apply a requested fit, and refit after a resize when the last fit set
+  the camera. Manual pan/zoom turns autofit off."
+  [state]
+  (let [dims (view-dims)
+        size [(:view-w dims) (:window-h dims)]
+        refit? (or (:fit? state)
+                   (and (:autofit? state)
+                        (not= size (:view-size state))))]
+    (cond-> (assoc state :view-size size)
+      refit? (events/fit dims))))
+
 (defn update-state [state]
   (let [state (-> state document/maybe-reload document/poll-mail)]
     (if (:quit-for-restart state)
       (do (document/save-session! state)
           (quit-for-restart!)
           state)
-      (apply-bridge-flags state))))
+      (-> (apply-bridge-flags state)
+          fit-state))))
 
 (defn- open-card! [state id]
   (let [state (events/select-class state id)]
@@ -934,6 +954,21 @@
       (mailbox/write-companion! root (merge (or info {}) {:session session}))
       session)))
 
+(defn- screenshot! [state]
+  (when-let [path (:screenshot @!bridge)]
+    ;; The first frame runs before update-state applies the fit.
+    (when (and (not (:shot-saved? @!bridge))
+               (not (:waiting state))
+               (not (:fit? state)))
+      (swap! !bridge assoc :shot-saved? true)
+      (try
+        (io/make-parents (io/file path))
+        (q/save path)
+        (catch Throwable e
+          (println "UML viewer screenshot failed:" (.getMessage e))))
+      (later! (fn [] (exit-app!)))))
+  state)
+
 (defn start!
   ([path source-impl]
    (start! path source-impl false))
@@ -950,7 +985,9 @@
     :features [:resizable]
     :setup (fn [] (setup path restart?))
     :update #'update-state
-    :draw #'draw/draw-state
+    :draw (fn [state]
+            (draw/draw-state state)
+            (screenshot! state))
     :mouse-pressed #'on-main-press
     :mouse-moved (fn [state event]
                    (events/on-move state (:x event) (:y event)))

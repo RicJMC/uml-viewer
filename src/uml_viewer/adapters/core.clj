@@ -16,28 +16,47 @@
        "                    Do not use this if no companion is attached.\n"
        "\n"
        "  --standalone      Load without starting or stopping a companion agent.\n"
+       "  --screenshot=PATH Save one frame to PATH, then exit. Implies\n"
+       "                    --standalone; useful for docs and visual review.\n"
        "  -h, --help        Print this help and exit.\n"))
+
+(def screenshot-prefix "--screenshot=")
+
+(defn- screenshot-path [args]
+  (some (fn [arg]
+          (when (and (string? arg)
+                     (.startsWith ^String arg screenshot-prefix))
+            (subs arg (count screenshot-prefix))))
+        args))
 
 (defn parse-args
   "EDN path and flags. `--restart` skips spawning a new agent."
   [args]
-  (let [args (keep identity args)
+  (let [args (vec (keep identity args))
         help? (boolean (some #{"--help" "-h"} args))
         standalone? (boolean (some #{"--standalone"} args))
         restart? (boolean (some #{"--restart"} args))
-        path (->> args (remove #{"--help" "-h" "--restart" "--standalone"}) first)]
+        screenshot (screenshot-path args)
+        path (->> args
+                  (remove #{"--help" "-h" "--restart" "--standalone"})
+                  (remove #(and (string? %) (.startsWith ^String % screenshot-prefix)))
+                  first)]
     (cond-> {:help? help?
              :restart? restart?
              :path (or path "examples/library.edn")}
-      standalone? (assoc :standalone? true))))
+      standalone? (assoc :standalone? true)
+      (and screenshot (seq screenshot))
+      (assoc :screenshot screenshot :standalone? true))))
 
 (defn start!
   "Launch the viewer. `source-impl` satisfies `LanguageSource`."
   [source-impl & args]
-  (let [{:keys [path restart? standalone? help?]} (parse-args args)]
+  (let [{:keys [path restart? standalone? help? screenshot]} (parse-args args)]
+    (when screenshot
+      (swap! sketch/!bridge assoc :screenshot screenshot))
     (if help?
       (do (print help-text) :help)
       (do
         (sketch/start! path source-impl (boolean (or restart? standalone?)))
         (println "Watching" path)
-        (println "Double-click a class for its card. Scroll to pan (Shift-scroll for horizontal). Ctrl+/− zoom; Ctrl+0 resets. R reloads. Click the real diagram above Proposals, or a proposal to show it.")))))
+        (println "Double-click a box for its card. Scroll to pan (Shift-scroll for horizontal). Ctrl+/− zoom; Ctrl+0 100%; F fits all. R reloads. Click the real diagram above Proposals, or a proposal to show it.")))))

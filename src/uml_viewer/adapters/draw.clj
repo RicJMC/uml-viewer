@@ -137,18 +137,21 @@
          :start-tip (first samples)
          :start-behind (second samples)}))))
 
-(defn- edge-ink [e selected?]
+(def dim-edge [66 86 78])
+
+(defn- edge-ink [e hot? focus?]
   (cond
-    (and (:violating e) selected?) [violation-hot 3.2]
+    (and (:violating e) hot?) [violation-hot 3.2]
     (:violating e) [violation 2.0]
-    selected? [gold 2.2]
+    hot? [gold 2.2]
+    focus? [dim-edge 1.0]
     :else [muted 1.4]))
 
-(defn- draw-edge [e selected? scene]
+(defn- draw-edge [e hot? focus? scene]
   (when-let [drawn (if (:strokes e)
                      e
                      (live-edge e scene))]
-    (let [[c w] (edge-ink e selected?)]
+    (let [[c w] (edge-ink e hot? focus?)]
       (stroke-rgb c w))
     (q/no-fill)
     (q/stroke-cap :round)
@@ -477,14 +480,38 @@
       (draw-proposal-row w selected i p))
     (draw-btn (layout/new-proposal-rect w n) "New Proposal")
     (draw-btn (layout/declutter-rect w n) (declutter-button-label state))
+    (draw-btn (layout/fit-rect w n) "Fit (F)")
     x))
+
+(defn- draw-legend [x y]
+  (rgb muted)
+  (q/text-align :left :top)
+  (q/text-size 11)
+  (q/text "LEGEND" (+ x 16) y)
+  (q/text-size 10)
+  (doseq [[i [c label]] (map-indexed
+                          vector
+                          [[(fill-for 8.5) "good grade (green)"]
+                           [(fill-for 1.5) "warm/brown = weak or unmeasured"]
+                           [[196 42 36] "red arrow: dependency-rule violation"]
+                           [[157 184 168] "C = CRAP dot, M = mutation dot"]
+                           [[157 184 168] "italic = component, not a class"]
+                           [[157 184 168] "hollow triangle = inheritance"]
+                           [[157 184 168] "open diamond = aggregation"]])]
+    (let [row-y (+ y 16 (* i 14))]
+      (rgb c)
+      (q/no-stroke)
+      (q/rect (+ x 16) (+ row-y 2) 8 8 2)
+      (rgb muted)
+      (q/text label (+ x 30) row-y))))
 
 (defn- draw-sidebar-empty [x y]
   (rgb muted)
   (q/text-align :left :top)
   (q/text-size 12)
-  (q/text "Click a component for its card.\nDouble-click a component to open it.\nEsc (or ←) goes up a level.\nScroll to pan; Shift-scroll for horizontal.\nCtrl+/− zoom 10%; Ctrl+0 resets.\nR reloads.\nClick the real diagram above Proposals,\nor a proposal to show it."
-          (+ x 16) y))
+  (q/text "Click a box for its card.\nDouble-click a box to open it.\nEsc (or ←) goes up a level.\nScroll to pan; Shift-scroll horizontally.\nCtrl+/− zoom; Ctrl+0 100%; F fits.\nR reloads. Right-click for actions.\nClick Real diagram or a proposal."
+          (+ x 16) y)
+  (draw-legend x (+ y 116)))
 
 (defn- mutation-line [m]
   (when-let [s (layout/format-mutants (:killed m) (:survived m))]
@@ -654,9 +681,10 @@
 
 (defn- draw-scene-edges [scene sel-id hover cam-x cam-y world-w world-h]
   (when-not (get-in scene [:diagram :hide-edges])
-    (doseq [e (:edges scene)
-            :when (edge-visible? e cam-x cam-y world-w world-h)]
-      (draw-edge e (edge-hot? e sel-id hover) scene))))
+    (let [focus? (some? sel-id)]
+      (doseq [e (:edges scene)
+              :when (edge-visible? e cam-x cam-y world-w world-h)]
+        (draw-edge e (edge-hot? e sel-id hover) focus? scene)))))
 
 (defn- draw-sections [scene]
   (doseq [sec (:sections scene)]
@@ -726,6 +754,21 @@
                       (name (:open-layer state))))]
       (q/text (str "← " label) 12 28))))
 
+(defn- draw-status [state]
+  (let [scene (:scene state)
+        z (double (or (:zoom state) 1.0))
+        boxes (count (remove :dummy? (:classes scene)))
+        arrows (count (:edges scene))]
+    (rgb [18 22 24] 210)
+    (q/no-stroke)
+    (q/rect 8 (- (q/height) 26) 300 20 4)
+    (rgb muted)
+    (q/text-align :left :center)
+    (q/text-size 10)
+    (q/text (str boxes " boxes  ·  " arrows " arrows  ·  zoom "
+                 (Math/round (* 100.0 z)) "%  ·  F fits")
+            14 (- (q/height) 16))))
+
 (defn draw-state [state]
   (apply q/background bg)
   (when (:waiting state)
@@ -734,6 +777,7 @@
   (draw-world state)
   (q/pop-matrix)
   (draw-sidebar state)
+  (draw-status state)
   (draw-diagram-banner state)
   (draw-nav-label state)
   (draw-edge-popup (:hover state) (:pointer state)))

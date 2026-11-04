@@ -253,7 +253,10 @@
 (defn- route-edge [acc e {:keys [from to-in to-ext from-ext] :as ends}]
   (cond
     (internal-edge? ends)
-    (update acc :internal conj (assoc e :from from :to to-in))
+    (update acc :internal conj
+            (cond-> (assoc e :from from :to to-in)
+              (or (not= from (:from e)) (not= to-in (:to e)))
+              (assoc :collapsed? true)))
 
     (foreign-out? ends)
     (add-foreign acc from to-ext e)
@@ -327,6 +330,17 @@
         relations (if (:preserve-parallel-edges doc)
                     relations
                     (policy/merge-edges relations))
+        ;; Inheritance, implements, and whole/part arrows are class-level
+        ;; facts. Once both ends collapse to namespace boxes, the honest
+        ;; component-level arrow is a plain dependency.
+        relations (mapv (fn [e]
+                          (if (and (:collapsed? e)
+                                   (contains? #{:inheritance :implements
+                                                :composition :aggregation}
+                                              (:kind e)))
+                            (assoc e :collapsed-kind (:kind e) :kind :dependency)
+                            e))
+                        relations)
         edges (filterv #(visible-edge? visible %)
                        (policy/apply-edge-kinds relations kinds omit))
         boxes (mapv #(with-ports parts %) boxes)]
@@ -607,13 +621,32 @@
        :label (:label layer)
        :classes cs})))
 
-(defn- proposal-packages [by-id stamped layers extras]
+(defn- top-id [id]
+  (keyword (first (str/split (name id) #"\."))))
+
+(defn- unassigned-entries
+  "Leftover leaves for Unassigned. A top-level ns that no layer claims
+  and no omit touches is its one box from the namespace tree, so a large
+  project does not lay out every leaf."
+  [root extras claimed omit]
+  (let [boxes (into {} (map (juxt :id identity) (mapcat :classes (:packages root))))
+        whole? (fn [t] (and (contains? boxes t)
+                            (not (claimed-covers? t claimed))
+                            (not (claimed-covers? t omit))))]
+    (->> extras
+         (map (fn [c]
+                (let [t (top-id (:id c))]
+                  (if (whole? t) (get boxes t) (as-module c)))))
+         distinct
+         vec)))
+
+(defn- proposal-packages [by-id stamped layers unassigned]
   (vec (rseq
          (cond-> (vec (keep #(layer-package by-id stamped %) layers))
-           (seq extras)
+           (seq unassigned)
            (conj {:id :proposal.unassigned
                   :label "Unassigned"
-                  :classes (mapv as-module extras)})))))
+                  :classes unassigned})))))
 
 (defn- proposal-edges [doc ranks by-id pkgs root layers]
   (let [visible (into (set (map :id (mapcat :classes pkgs)))
@@ -656,7 +689,8 @@
          by-id (into {} (map (juxt :id identity) stamped))
          claimed (set (mapcat #(policy/nse-ids (:nses %)) layers))
          extras (filterv #(spare-leaf? claimed omit %) stamped)
-         pkgs (proposal-packages by-id stamped layers extras)
+         pkgs (proposal-packages by-id stamped layers
+                                 (unassigned-entries root extras claimed omit))
          notice (or (:notice named) (:notice proposal) policy/proposal-notice)]
      (attach-proposal root pkgs
                       (proposal-edges doc ranks by-id pkgs root layers)

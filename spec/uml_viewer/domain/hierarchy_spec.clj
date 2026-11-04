@@ -51,6 +51,41 @@
       (should= "Unassigned" (:label last-pkg))
       (should (some #{:ir} (map :id (:classes last-pkg))))))
 
+  (it "keeps a top-level ns that no layer touches as one box in Unassigned"
+    (let [p (assoc policy :proposals [{:id :empty :name "Empty" :layers []}])
+          doc (policy/apply-policy p graph)
+          view (hierarchy/proposal-view doc :empty)
+          unassigned (first (:packages view))
+          source (first (filter #(= :source (:id %)) (:classes unassigned)))
+          edges (set (map (juxt :from :to) (:edges view)))]
+      (should= [:proposal.unassigned] (mapv :id (:packages view)))
+      (should= #{:ir :source :layout} (set (map :id (:classes unassigned))))
+      (should (:drill? source))
+      (should (contains? edges [:source :javax.swing]))
+      (should (contains? edges [:layout :ir]))
+      (should-not (some #(= :source.clojure (first %)) edges))))
+
+  (it "lists leftover leaves one by one when a layer or an omit splits a top-level ns"
+    (let [g {:classes [{:id :app.a :name "A" :ns "demo.app.a"}
+                       {:id :app.b :name "B" :ns "demo.app.b"}
+                       {:id :lib :name "Lib" :ns "demo.lib"}]
+             :edges [{:from :app.b :to :lib :kind :dependency}]}
+          p {:title "Demo" :hierarchical true :order [:app :lib]
+             :proposals [{:id :split :name "Split"
+                          :layers [{:id :core :label "Core" :nses [:app.a]}]}
+                         {:id :trim :name "Trim" :omit [:app.a]
+                          :layers [{:id :base :label "Base" :nses [:lib]}]}]}
+          doc (policy/apply-policy p g)
+          unassigned (fn [which]
+                       (->> (:packages (hierarchy/proposal-view doc which))
+                            (filter #(= :proposal.unassigned (:id %)))
+                            first
+                            :classes
+                            (map :id)
+                            set))]
+      (should= #{:app.b :lib} (unassigned :split))
+      (should= #{:app.b} (unassigned :trim))))
+
   (it "gives a component the max level of its elements"
     (let [doc {:hierarchical true
                :classes [{:id :engine :name "Engine" :level 0}

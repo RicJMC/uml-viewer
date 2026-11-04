@@ -63,9 +63,14 @@
   (let [nr (new-proposal-rect window-w n)]
     (assoc nr :y (+ (:y nr) inspector-btn-h inspector-btn-gap))))
 
+(defn fit-rect
+  [window-w n]
+  (let [d (declutter-rect window-w n)]
+    (assoc d :y (+ (:y d) inspector-btn-h inspector-btn-gap))))
+
 (defn inspector-body-y
   [n]
-  (let [d (declutter-rect 1500 (or n 0))]
+  (let [d (fit-rect 1500 (or n 0))]
     (+ (:y d) inspector-btn-h 16)))
 
 (defn in-rect? [r x y]

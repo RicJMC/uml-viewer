@@ -95,7 +95,7 @@
       (should-not (get-in off [:scene :diagram :proposal]))
       (should= s p-key)))
 
-  (it "hits the real diagram, proposal rows, New Proposal, and Declutter"
+  (it "hits the real diagram, proposal rows, New Proposal, Declutter, and Fit"
     (let [doc {:proposals [{:id :a :name "A" :layers []}
                            {:id :b :name "B" :layers []}]}
           s {:doc doc}
@@ -103,13 +103,16 @@
           real (layout/real-diagram-rect w)
           r0 (layout/proposal-row-rect w 0)
           nr (layout/new-proposal-rect w 2)
-          dr (layout/declutter-rect w 2)]
+          dr (layout/declutter-rect w 2)
+          fr (layout/fit-rect w 2)]
       (should= :real-diagram (:kind (events/inspector-hit s (geom/cx real) (geom/cy real) w)))
       (should (< (+ (:y real) (:h real)) layout/proposals-label-y))
       (should (< layout/proposals-label-y (:y r0)))
       (should= :a (:id (events/inspector-hit s (+ (:x r0) 2) (+ (:y r0) 2) w)))
       (should= :new-proposal (:kind (events/inspector-hit s (geom/cx nr) (geom/cy nr) w)))
       (should= :declutter (:kind (events/inspector-hit s (geom/cx dr) (geom/cy dr) w)))
+      (should= :fit (:kind (events/inspector-hit s (geom/cx fr) (geom/cy fr) w)))
+      (should (< (:y dr) (:y fr)))
       (should-be-nil (events/inspector-hit s 10 10 w))))
 
   (it "adds, renames, and deletes a proposal without touching the IR path"
@@ -330,7 +333,31 @@
       (should= 2 (count (get-in added [:doc :proposals])))
       (should= :arrows (:declutter cleared))
       (should= s (events/on-inspector-press s {:kind :nope}))
-      (should= s (events/on-inspector-press s nil)))))
+      (should= s (events/on-inspector-press s nil))
+      (should (:fit? (events/on-inspector-press {:declutter :full} {:kind :fit}))))))
+
+(describe "fit"
+  (it "bounds a tall scene by height and keeps its centre in view"
+    (let [view-w 1220
+          view-h 920
+          r (events/fit-scene {:size {:w 2000 :h 2000 :min-x 0 :min-y 0}}
+                              view-w view-h)]
+      (should (< (:zoom r) 0.5))
+      (should (< (Math/abs (- 1000.0 (+ (:cam-x r) (/ view-w 2.0 (:zoom r))))) 1.0e-6))
+      (should (< (Math/abs (- 1000.0 (+ (:cam-y r) (/ view-h 2.0 (:zoom r))))) 1.0e-6))))
+
+  (it "caps automatic zoom so a tiny diagram does not fill the canvas"
+    (let [r (events/fit-scene {:size {:w 400 :h 300 :min-x 0 :min-y 0}} 1220 920)]
+      (should= events/fit-max-zoom (:zoom r))
+      (should (< (Math/abs (- 200.0 (+ (:cam-x r) (/ 1220.0 2.0 (:zoom r))))) 1.0e-6))))
+
+  (it "fits on F and records that the camera is automatic"
+    (let [s (assoc (state) :scene {:size {:w 4000 :h 4000}} :zoom 2.0)
+          next (events/on-key s :f {:window-w 1500 :window-h 900
+                                    :view-w 1220})]
+      (should-not (:fit? next))
+      (should (:autofit? next))
+      (should (< (:zoom next) 1.0)))))
 
 (describe "zoom key names"
   (it "reads keyword, character, string, and other keys"

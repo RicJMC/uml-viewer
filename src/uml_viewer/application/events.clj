@@ -17,12 +17,14 @@
    :open-layer (:open-layer state)})
 
 (defn- rebuild [state]
+  "Recompile the scene and ask the next frame to fit it."
   (if (and (:doc state) (:hierarchical (:doc state)))
     (assoc state
       :scene (document/compile-view (:doc state)
                                     (overlay/metrics-root (:path state))
                                     (or (:focus state) [])
                                     (view-opts state))
+      :fit? true
       :cam-x 0
       :cam-y 0
       :selected nil)
@@ -100,7 +102,9 @@
         (when (layout/in-rect? (layout/new-proposal-rect window-w n) x y)
           {:kind :new-proposal})
         (when (layout/in-rect? (layout/declutter-rect window-w n) x y)
-          {:kind :declutter}))))
+          {:kind :declutter})
+        (when (layout/in-rect? (layout/fit-rect window-w n) x y)
+          {:kind :fit}))))
 
 (defn on-inspector-press
   "Left click on inspector proposal UI."
@@ -110,6 +114,7 @@
     :proposal (show-proposal state (:id hit))
     :new-proposal (add-proposal state)
     :declutter (cycle-declutter state)
+    :fit (assoc state :fit? true)
     state))
 
 (defn layer-id
@@ -187,6 +192,39 @@
     [(+ (:cam-x state 0) (/ (double x) z))
      (+ (:cam-y state 0) (/ (double y) z))]))
 
+(def fit-pad 24)
+(def fit-max-zoom 1.6)
+
+(defn fit-scene
+  "Zoom and camera that show the whole scene in `view-w` x `view-h`.
+  Caps the automatic zoom for tiny scenes; the content is centered."
+  [scene view-w view-h]
+  (let [size (:size scene)
+        min-x (or (:min-x size) 0)
+        min-y (or (:min-y size) 0)
+        w (double (or (:w size) 800))
+        h (double (or (:h size) 600))
+        content-w (max 1.0 (- w min-x))
+        content-h (max 1.0 (- h min-y))
+        z (min fit-max-zoom
+               (max zoom-min
+                    (min (/ (- (max 1.0 (double view-w)) (* 2.0 fit-pad)) content-w)
+                         (/ (- (max 1.0 (double view-h)) (* 2.0 fit-pad)) content-h))))]
+    {:zoom z
+     :cam-x (- (/ (+ min-x w) 2.0) (/ (double view-w) 2.0 z))
+     :cam-y (- (/ (+ min-y h) 2.0) (/ (double view-h) 2.0 z))}))
+
+(defn fit
+  "Fit the current scene in the canvas. `dims` may hold `:view-w` and
+  `:window-h`, or only `:window-w` and `:window-h`."
+  [state dims]
+  (let [vw (or (:view-w dims)
+               (- (or (:window-w dims) 1500) layout/sidebar-w))
+        vh (or (:window-h dims) 920)]
+    (merge state
+           (fit-scene (:scene state) vw vh)
+           {:fit? false :autofit? true})))
+
 (defn on-move [state x y]
   (let [[wx wy] (world-xy state x y)]
     (assoc state
@@ -225,12 +263,18 @@
   (let [size (get-in state [:scene :size] {:w 800 :h 600})
         min-x (or (:min-x size) 0)
         min-y (or (:min-y size) 0)
+        w (double (or (:w size) 800))
+        h (double (or (:h size) 600))
         vis-w (/ (double view-w) z)
-        vis-h (/ (double window-h) z)]
-    {:min-x min-x
-     :min-y min-y
-     :max-x (max min-x (- (:w size) vis-w))
-     :max-y (max min-y (- (:h size) vis-h))}))
+        vis-h (/ (double window-h) z)
+        center-x (- (/ (+ min-x w) 2.0) (/ vis-w 2.0))
+        center-y (- (/ (+ min-y h) 2.0) (/ vis-h 2.0))
+        fits-x? (>= vis-w (- w min-x))
+        fits-y? (>= vis-h (- h min-y))]
+    {:min-x (if fits-x? center-x min-x)
+     :min-y (if fits-y? center-y min-y)
+     :max-x (if fits-x? center-x (max min-x (- w vis-w)))
+     :max-y (if fits-y? center-y (max min-y (- h vis-h)))}))
 
 (defn on-scroll [state amount opts]
   (let [{:keys [horizontal? window-h view-w]} (scroll-opts opts)
@@ -238,9 +282,10 @@
         amount (scroll-amount amount)
         {:keys [min-x min-y max-x max-y]} (scroll-limits state view-w window-h z)
         delta (/ (* amount 48.0) z)]
-    (if horizontal?
-      (update state :cam-x #(max min-x (min max-x (+ % delta))))
-      (update state :cam-y #(max min-y (min max-y (+ % delta)))))))
+    (let [state (assoc state :autofit? false)]
+      (if horizontal?
+        (update state :cam-x #(max min-x (min max-x (+ % delta))))
+        (update state :cam-y #(max min-y (min max-y (+ % delta))))))))
 
 (defn- view-center [state dims]
   (let [z (zoom-of state)
@@ -259,7 +304,8 @@
     (assoc state
       :zoom z
       :cam-x (- cx (/ (double vw) 2.0 z))
-      :cam-y (- cy (/ (double vh) 2.0 z)))))
+      :cam-y (- cy (/ (double vh) 2.0 z))
+      :autofit? false)))
 
 (defn- raw-char [raw]
   (cond
@@ -306,4 +352,5 @@
               (back state)
               (assoc state :selected nil))
        :r (-> state (dissoc :waiting) (assoc :mtime 0 :metrics-stamp nil))
+       :f (fit state dims)
        state))))

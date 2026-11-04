@@ -20,6 +20,11 @@
     (should= {:path "doc.edn" :restart? true :help? false}
              (core/parse-args ["doc.edn" "--restart"])))
 
+  (it "takes a screenshot path and implies standalone"
+    (should= {:path "doc.edn" :restart? false :help? false
+              :standalone? true :screenshot "/tmp/a.png"}
+             (core/parse-args ["--screenshot=/tmp/a.png" "doc.edn"])))
+
   (it "prints a description of the arguments on --help"
     (should= {:path "examples/library.edn" :restart? false :help? true}
              (core/parse-args ["--help"]))
