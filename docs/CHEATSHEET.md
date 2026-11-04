@@ -1,7 +1,8 @@
 # Viewer cheatsheet
 
 Every control in the desktop viewer, what it does, and what you should see
-after clicking it. The canvas is on the left; the **Inspector** is the
+after clicking it. Concepts behind the boxes and arrows are in
+[USER-GUIDE.md](USER-GUIDE.md). The canvas is on the left; the **Inspector** is the
 sidebar on the right.
 
 **Standalone vs companion.** With `--standalone` the viewer opens without an
@@ -47,6 +48,7 @@ The Inspector may say the session is not attached.
 | **Real diagram** row (top, shows the document title) | Returns to the namespace tree; writes `:context :real` | Row highlighted gold; the canvas shows the real ns tree again |
 | A **proposal** row | Shows that proposed architecture; writes `:context` with its id | Canvas marked **PROPOSAL — not instantiated in code**; violating arrows re-evaluated with that proposal's component order |
 | **New Proposal** | Adds an empty proposal named with a timestamp and shows it | New row under "Proposals", selected |
+| **Fit (F)** | Fits the whole diagram in the canvas and centers it; never zooms past 160% on a tiny diagram | Diagram shrinks/grows to fit; the status bar shows the new zoom |
 | **Declutter** (label shows the current mode; click cycles it) | `Declutter none` → `Declutter arrows` → `Remove arrows` → `Declutter elements` → `Declutter classes` → back to none | arrows: one arrow per component pair per direction; Remove arrows: triangles on each box instead of lines, hover for deps; elements: nested names, members, and ports hidden; classes: class boxes inside components hidden |
 | A proposal row, **right-click** | Swing menu: **Rename** (input dialog) and **Delete** | Rename changes the label; Delete removes the row |
 | **Regen** | Standalone: re-runs the generator locally. Companion: queues `:regen` and wakes the agent | Standalone: status "Regenerated from source." and the canvas reloads. Companion: "Regen requested." or "Regen queued; Grok session not attached." |
@@ -64,6 +66,7 @@ The Inspector may say the session is not attached.
 | `Ctrl+` / `Ctrl+=` | Zoom in 10% (view center stays fixed) |
 | `Ctrl-` | Zoom out 10% |
 | `Ctrl+0` | Reset zoom to 100% |
+| `F` | Fit the whole diagram and center it |
 | `R` | Reload the current EDN immediately (the watcher also reloads on save and when `.metrics/` changes) |
 | Close window | Exits the app; in companion mode kills only this project's tmux agent session |
 
@@ -75,12 +78,46 @@ The Inspector may say the session is not attached.
 - **C** and **M** dots in a box's upper-right are the two separate scores.
 - **Red arrows** are dependency-rule violations (inner/higher level pointing
   outward). Bold red when the current selection highlights the arrow.
+  Selecting a box dims unrelated ordinary arrows; red violations stay
+  visible.
 - **Level** numbers on class boxes: innermost is 0, and level 0 is drawn at
   the bottom. Good arrows (outer → inner) point down.
 - **Italic** names are not classes (components/layers, interfaces,
   enumerations, package banners). **α** marks abstract classes, **I**
   interfaces. **Ovals** are foreign libraries listed in the policy.
+- **Hollow triangles** mean inheritance or interface implementation. When a
+  class-level inheritance/implements/aggregation edge collapses onto two
+  namespace boxes, it is drawn as a plain dependency: namespaces do not
+  inherit. Drill in or open the class card for the exact relationship.
+- **Ports** are the small labelled boxes attached to a class. An arrow into
+  the class is an in-port (the outside box depends on it); an arrow out is
+  an out-port. The label names the outside component/class.
+- **Status bar** (lower-left): `N boxes · M arrows · zoom X% · F fits`.
+  Use it to confirm that a regenerated IR changed shape.
+- **Legend** (Inspector, nothing selected): colour chips for grades, red
+  arrow, C/M dots, italic components, triangle, diamond.
 - Missing, stale, partial, or failed measurements are not passing results.
+
+## Screenshots and visual review
+
+`--screenshot=PATH` saves one fitted frame to a PNG and exits without an
+agent. It implies `--standalone`. Keep the file outside the repository:
+project screenshots are not committed.
+
+```sh
+clj -M:run --screenshot=/tmp/view.png target/java.edn
+```
+
+To capture a drilled view, seed `.uml-viewer/session.edn` in the inspected
+project (omit `:zoom` so the next frame fits):
+
+```clojure
+{:focus [:model] :declutter :full}
+```
+
+Then run the screenshot command and remove the session file. For the
+C++ fixture, `{:focus [:app]}` shows `Controller` and its ports; for Java,
+`{:focus [:model]}` shows `Animal`/`Dog` and the inheritance arrow.
 
 ## Keeping this current
 

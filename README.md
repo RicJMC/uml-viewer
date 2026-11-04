@@ -30,6 +30,12 @@ The bottom line: you can view the structure of your code, see how well
 tests cover it, play what-if games, and manipulate the system from a high
 level.
 
+**New to the window?** Read [docs/USER-GUIDE.md](docs/USER-GUIDE.md) for
+what every box and arrow means, then keep
+[docs/CHEATSHEET.md](docs/CHEATSHEET.md) open while clicking. The guide
+also records the fixture counts used to check that a diagram still matches
+its source.
+
 ## Tech
 
 A live Quil app that lays out and draws UML from an EDN IR. A **policy** plus
@@ -172,8 +178,18 @@ clj -M:ir                            # policy → examples/uml-viewer.edn
 clj -M:run
 clj -M:run examples/library.edn
 clj -M:run examples/uml-viewer.edn
+clj -M:run --standalone target/java.edn
+clj -M:run --screenshot=/tmp/view.png target/java.edn
 clj -M:run --help
 ```
+
+The canvas fits the whole diagram on load and after every drill,
+proposal switch, and declutter change. Press **F** (or the Inspector's
+**Fit (F)** button) to fit it again; `Ctrl+0` returns to 100%. The
+lower-left status bar reports the box count, arrow count, and zoom.
+`--screenshot` saves one fitted frame to a PNG and exits without starting
+an agent; use it for design review and keep the file out of the repository.
+The full control reference is [docs/CHEATSHEET.md](docs/CHEATSHEET.md).
 
 From **any Clojure project** you want to view (no local uml-viewer checkout
 needed):
@@ -313,10 +329,10 @@ namespace is a `:dependency`. `requiring-resolve` of a quoted var is a
 `:stereotype :interface`. `defrecord` or `deftype` of a protocol is
 `:implements`. External `:require`s and `:import`s become **foreign**
 classes. The overlay fills Clojure members from `.metrics/`. TypeScript,
-Rust, and Python are separate scanners (see
-[Language graphs](#language-graphs)): one class per module, with exported
-members as `:ops`. The overlay joins each snapshot by `:ns`, then by
-the class id.
+Rust, Python, and Java are separate scanners (see
+[Language graphs](#language-graphs)): one class per module or source file,
+with exported members as `:ops`. The overlay joins each snapshot by `:ns`,
+then by the class id.
 
 ### Do not invent layers (components)
 
@@ -624,7 +640,7 @@ inspector says the session is not attached.
 Generating the IR asks `uml-viewer.graph` to scan a source tree. `:lang`
 selects the scanner (default `:clojure`). `:sources` scans each root and
 merges them. Register another implementation with
-`(graph/register! :java my-java-scanner)`. The scanner must satisfy
+`(graph/register! :my-lang my-scanner)`. The scanner must satisfy
 `LanguageGraph`:
 
 | method | role |
@@ -636,7 +652,8 @@ command name into a `:dependency` and does not copy those keys onto a
 class.
 
 Classes are `{:id :name :ns :stereotype :lang :file}`. Edges are
-`{:from :to :kind}` (`:dependency` or `:implements`). The policy layer is
+`{:from :to :kind}` (`:dependency`, `:inheritance`, `:implements`,
+`:association`, `:aggregation`, or `:composition`). The policy layer is
 language-neutral. Do not special-case a language in `policy`. Main
 requires each scanner so it registers; `ir-generator` looks the scanner
 up.
@@ -721,6 +738,29 @@ Rails reference needs no `require`. A Rails root walks `app/*` (and
 they open at their definition. `_spec.rb` and `_test.rb` files are
 skipped.
 
+**Java** (`uml-viewer.java-language.graph-java`) emits one class per
+`.java` file. The `package` declaration names it, so
+`src/main/java/com/acme/model/Dog.java` in `package com.acme.model` becomes
+`:model.Dog` under the prefix `com.acme`. Point `:src` at
+`src/main/java` or at the project root. A `:sources` entry needs no
+`:prefix`; the package already names each class. Nested types belong to
+their file. It skips `*Test.java`, `*Tests.java`, `*IT.java`,
+`package-info.java`, `module-info.java`, the test roots beside
+`src/main` (`src/test`, `src/integrationTest`, `src/testFixtures`), and
+paths under `target` and `build`. `extends` is `:inheritance`, for a
+class or an interface; `implements` is `:implements`. An import of a
+project type is a dependency, and so is a static import of its member.
+Java needs no import inside a package, so a mention of a type from the
+same package, or from a `.*` import, is a dependency too. A fully
+qualified `com.acme.model.Animal` is a dependency. A single-type import
+shadows the package, as in Java. An import that names no project type is
+foreign (`java.util.List` stays `java.util.List`, and a listed
+`:foreign` prefix such as `java.util` collapses it). Public methods of
+the type named after the file are `:ops`. Interface and annotation
+methods are public unless `private`. Constructors are not ops. An
+interface or annotation is `:stereotype :interface`, an enum
+`:enumeration`, and an abstract class `:abstract`.
+
 **Haskell** (`uml-viewer.haskell-language.graph-haskell`) emits one class
 per module and `import` dependencies. Module headers, indented/grouped/
 operator signatures, tabs, standalone pragmas, and CPP lines are read
@@ -735,7 +775,7 @@ inheritance, dependency, association, and aggregation relationships,
 overload identities, and exact source locations. See
 [C++ support](#c-support).
 
-CRAP and mutation for TypeScript, Rust, Python, Go, Java/Kotlin, and .NET
+CRAP and mutation for TypeScript, Rust, Python, Go, Java, Kotlin, and .NET
 come from separate tools. The overlay joins a snapshot to the class whose
 `:ns` equals that namespace. Otherwise the class id owns that name (`bookwriter.model`
 owns `model`), a dotted child rolls up (`pdf` owns `pdf.Layout`), and
