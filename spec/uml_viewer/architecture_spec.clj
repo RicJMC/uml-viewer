@@ -6,7 +6,7 @@
 (def layer-rank
   {:domain 0 :source 0 :graph 0 :languages 0
    :clojure-language 0 :typescript-language 0 :rust-language 0
-   :python-language 0 :csharp-language 0 :go-language 0
+   :python-language 0 :java-language 0 :csharp-language 0 :go-language 0
    :haskell-language 0 :kotlin-language 0 :ruby-language 0
    :cpp-language 0
    :engine 1
@@ -115,6 +115,8 @@
                                           'uml-viewer.python-language.graph-python
                                           'uml-viewer.python-language.source-python-external
                                           'uml-viewer.python-language.graph-python-external
+                                          'uml-viewer.java-language.source-java
+                                          'uml-viewer.java-language.graph-java
                                           'uml-viewer.csharp-language.source-csharp
                                           'uml-viewer.csharp-language.graph-csharp
                                           'uml-viewer.go-language.source-go

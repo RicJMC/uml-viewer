@@ -6,8 +6,10 @@
  :edge-kinds
  {[:main.uml-viewer :adapters.core] :association,
   [:main.ir-generator :typescript-language.graph-typescript] :association,
+  [:main :java-language] :association,
   [:application.document :domain.hierarchy] :association,
   [:main.ir-generator :clojure-language.graph-clojure] :association,
+  [:main.ir-generator :java-language.graph-java] :association,
   [:main.uml-viewer :rust-language.source-rust] :association,
   [:application.document :engine.compose] :association,
   [:main.uml-viewer :typescript-language.source-typescript] :association,
@@ -18,6 +20,7 @@
   [:adapters.core :adapters.sketch] :association,
   [:main :application] :association,
   [:main.uml-viewer :clojure-language.source-clojure] :association,
+  [:main.uml-viewer :java-language.source-java] :association,
   [:main :clojure-language] :association,
   [:main.ir-generator :application.ir-generator] :association,
   [:main.uml-viewer :python-language.source-python] :association,
@@ -31,10 +34,12 @@
  [[:domain
    :source
    :graph
+   :languages
    :clojure-language
    :typescript-language
    :rust-language
    :python-language
+   :java-language
    :csharp-language
    :go-language
    :haskell-language
@@ -53,10 +58,12 @@
   :engine
   :source
   :graph
+  :languages
   :clojure-language
   :typescript-language
   :rust-language
   :python-language
+  :java-language
   :csharp-language
   :go-language
   :haskell-language
@@ -97,6 +104,7 @@
   {:from :main.ir-generator, :to :clojure-language.graph-clojure, :kind :dependency}
   {:from :rust-language.graph-rust, :to :graph, :kind :implements}
   {:from :application.detail, :to :application.overlay, :kind :dependency}
+  {:from :main.ir-generator, :to :java-language.graph-java, :kind :dependency}
   {:from :engine.layout, :to :domain.geom, :kind :dependency}
   {:from :python-language.source-python-external, :to :source, :kind :implements}
   {:from :python-language.graph-python, :to :graph, :kind :implements}
@@ -139,6 +147,7 @@
   {:from :main.ir-generator, :to :languages.external, :kind :dependency}
   {:from :main.metrics, :to :languages.external, :kind :dependency}
   {:from :application.events, :to :application.document, :kind :dependency}
+  {:from :java-language.graph-java, :to :graph, :kind :implements}
   {:from :main.uml-viewer, :to :csharp-language.source-csharp, :kind :dependency}
   {:from :adapters.draw, :to :engine.hit, :kind :dependency}
   {:from :clojure-language.graph-clojure, :to :graph, :kind :implements}
@@ -186,6 +195,7 @@
   {:from :main.ir-generator, :to :kotlin-language.graph-kotlin, :kind :dependency}
   {:from :adapters.draw, :to :domain.config, :kind :dependency}
   {:from :main.uml-viewer, :to :clojure-language.source-clojure, :kind :dependency}
+  {:from :main.uml-viewer, :to :java-language.source-java, :kind :dependency}
   {:from :engine.curve, :to :domain.geom, :kind :dependency}
   {:from :python-language.source-python, :to :source, :kind :dependency}
   {:from :engine.layout, :to :domain.config, :kind :dependency}
@@ -201,6 +211,7 @@
   {:from :python-language.source-python-external,
    :to :python-language.bridge,
    :kind :dependency}
+  {:from :java-language.source-java, :to :source, :kind :dependency}
   {:from :csharp-language.source-csharp, :to :source, :kind :dependency}
   {:from :main.ir-generator, :to :application.ir-generator, :kind :dependency}
   {:from :main.ir-generator, :to :csharp-language.graph-csharp, :kind :dependency}
@@ -468,6 +479,20 @@
    :lang :clojure,
    :id :haskell-language.syntax}
   {:stereotype nil,
+   :ns "uml-viewer.java-language.graph-java",
+   :name "GraphJava",
+   :file "src/uml_viewer/java_language/graph_java.clj",
+   :level 0,
+   :lang :clojure,
+   :id :java-language.graph-java}
+  {:stereotype nil,
+   :ns "uml-viewer.java-language.source-java",
+   :name "SourceJava",
+   :file "src/uml_viewer/java_language/source_java.clj",
+   :level 0,
+   :lang :clojure,
+   :id :java-language.source-java}
+  {:stereotype nil,
    :ns "uml-viewer.kotlin-language.graph-kotlin",
    :name "GraphKotlin",
    :file "src/uml_viewer/kotlin_language/graph_kotlin.clj",
@@ -492,6 +517,7 @@
    :ns "uml-viewer.languages.external",
    :name "External",
    :file "src/uml_viewer/languages/external.clj",
+   :level 0,
    :lang :clojure,
    :id :languages.external}
   {:stereotype nil,

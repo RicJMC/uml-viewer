@@ -6,6 +6,7 @@
             [uml-viewer.go-language.graph-go]
             [uml-viewer.graph :as graph]
             [uml-viewer.haskell-language.graph-haskell]
+            [uml-viewer.java-language.graph-java]
             [uml-viewer.kotlin-language.graph-kotlin]
             [uml-viewer.languages.external]
             [uml-viewer.python-language.graph-python]

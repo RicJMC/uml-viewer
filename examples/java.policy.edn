@@ -1,0 +1,9 @@
+{:title "java_fixture"
+ :src "examples/java-fixture/src/main/java"
+ :prefix "com.acme"
+ :lang :java
+ :out "target/java.edn"
+ :hierarchical true
+ :order [model api store app]
+ :levels [[model api] [store] [app]]
+ :foreign [java.util]}

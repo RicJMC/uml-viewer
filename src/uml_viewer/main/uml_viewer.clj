@@ -9,6 +9,7 @@
             [uml-viewer.csharp-language.source-csharp]
             [uml-viewer.domain.log :as log]
             [uml-viewer.go-language.source-go]
+            [uml-viewer.java-language.source-java]
             [uml-viewer.haskell-language.source-haskell]
             [uml-viewer.kotlin-language.source-kotlin]
             [uml-viewer.main.ir-generator :as generator]
