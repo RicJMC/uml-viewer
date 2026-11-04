@@ -81,14 +81,14 @@
            second))
 
 (defn- funcs
-  "Functions and methods, named as crapper and mutator name them: the method
-  name alone (they put the receiver in the namespace). A method is exported
-  only when both the receiver type and the method are."
+  "Functions and methods. A method is `Type.Method`, the name go-metrics
+  writes, so the overlay can join it. A method is exported only when both
+  the receiver type and the method are."
   [text]
   (for [[_ recv name] (re-seq #"(?m)^func\s*(\([^)]*\))?\s*([A-Za-z_][A-Za-z0-9_]*)\s*[\[(]" text)]
     (if recv
       (let [t (receiver-type recv)]
-        {:name name :exported (and (exported? t) (exported? name))})
+        {:name (str t "." name) :exported (and (exported? t) (exported? name))})
       {:name name :exported (exported? name)})))
 
 (def ^:private type-spec

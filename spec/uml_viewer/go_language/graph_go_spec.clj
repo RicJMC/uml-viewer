@@ -41,6 +41,7 @@
                               "var s = `import \"net\"`\n")))))
 
   (it "lists exported functions, methods on exported types, and exported types"
+    ;; A method is `Type.Method` so go-metrics rows join the same op.
     (let [surface (go/read-file
                     (str "package order\n"
                          "type Service struct{}\n"
@@ -54,7 +55,7 @@
                          "func Map[T any](xs []T) []T { return xs }\n"
                          "func (l *List[T]) Push(x T) {}\n"))]
       (should= "order" (:package surface))
-      (should= ["New" "Place" "Map" "Push"] (:ops surface))
+      (should= ["New" "Service.Place" "Map" "List.Push"] (:ops surface))
       (should= #{"Service" "Repo" "ID"} (set (map :name (:types surface))))))
 
   (it "names the receiver type of a method"
@@ -96,7 +97,7 @@
         (should= #{:order :platform.db :billing :jackc.pgx} (set (keys by-id)))
         (should= "example.com.shop.internal.order" (:ns (by-id :order)))
         (should= :go (:lang (by-id :order)))
-        (should= ["Service" "Place"] (mapv :name (:ops (by-id :order))))
+        (should= ["Service" "Service.Place"] (mapv :name (:ops (by-id :order))))
         (should= :interface (:stereotype (by-id :billing)))
         (should (:foreign (by-id :jackc.pgx)))
         (should= #{[:order :platform.db :dependency]
