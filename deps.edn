@@ -38,6 +38,8 @@
         :main-opts ["-m" "uml-viewer.main.uml-viewer"]}
   :uml-viewer {:extra-deps {quil/quil {:mvn/version "4.3.1563"}}
                :main-opts ["-m" "uml-viewer.main.uml-viewer"]}
+  :web {:extra-deps {quil/quil {:mvn/version "4.3.1563"}}
+        :main-opts ["-m" "uml-viewer.main.uml-viewer" "--web"]}
   :uml-viewer-restart {:extra-deps {quil/quil {:mvn/version "4.3.1563"}}
                        :main-opts ["-m" "uml-viewer.main.uml-viewer"
                                    "--restart" "examples/uml-viewer.edn"]}}}

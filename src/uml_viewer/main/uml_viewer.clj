@@ -4,6 +4,7 @@
             [uml-viewer.adapters.core :as core]
             [uml-viewer.adapters.sketch :as sketch]
             [uml-viewer.application.ir-generator :as ir-generator]
+            [uml-viewer.application.overlay :as overlay]
             [uml-viewer.clojure-language.source-clojure :as clj-source]
             [uml-viewer.cpp-language.source-cpp]
             [uml-viewer.csharp-language.source-csharp]
@@ -81,11 +82,25 @@
         policy (ir-generator/read-policy policy-path)]
     (ir-generator/generate (generator/graph-for policy) policy-path path)))
 
+(defn- await-web-url [path]
+  (let [f (io/file (overlay/metrics-root path) ".uml-viewer" "web.edn")]
+    (loop [n 0]
+      (when (< n 100)
+        (if (.isFile f)
+          (try
+            (:url (edn/read-string (slurp f)))
+            (catch Exception _ nil))
+          (do (Thread/sleep 100)
+              (recur (inc n))))))))
+
 (defn -main [& args]
-  (when (should-detach? args)
-    (let [p (detach! args)]
-      (println "UML viewer started (pid" (.pid p) "). Log:" log/log-name)
-      (System/exit 0)))
+  (let [options (core/parse-args args)]
+    (when (should-detach? args)
+      (let [p (detach! args)]
+        (println "UML viewer started (pid" (.pid p) "). Log:" log/log-name)
+        (when-let [u (and (:web? options) (await-web-url (:path options)))]
+          (println "Viewer at" u))
+        (System/exit 0))))
   (log/install-exception-log!)
   (let [options (core/parse-args args)
         document (when-not (:help? options)
@@ -96,4 +111,5 @@
     (when (:standalone? options)
       (swap! sketch/!bridge assoc :keep-agent true
              :regenerate #(regenerate! (:path options))))
-    (apply core/start! (if document (source-for document) clj-source/impl) args)))
+    (binding [core/*regenerate* regenerate!]
+      (apply core/start! (if document (source-for document) clj-source/impl) args))))
