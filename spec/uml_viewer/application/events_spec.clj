@@ -316,6 +316,17 @@
       (should= [] (:focus (events/back opened)))
       (should= s (events/back s)))))
 
+(describe "port navigation"
+  (it "jumps to the package when a port names no single class"
+    (let [doc {:hierarchical true
+               :title "Demo"
+               :classes [{:id :store.Node :ns "demo.store.Node"}]
+               :edges []}
+          s {:doc doc :focus [:app] :path nil :scene {:classes []}}
+          next (events/jump-to s :store)]
+      (should= [:store] (:focus next))
+      (should (:fit? next)))))
+
 (describe "inspector presses"
   (it "switches proposal, adds one, cycles declutter, or ignores the hit"
     (let [doc {:hierarchical true :title "T" :classes [] :edges [] :order []

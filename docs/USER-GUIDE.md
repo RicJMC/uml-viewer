@@ -105,7 +105,8 @@ its namespace, so the same policy prefix works for a conventional
 - **Small labelled box attached to a class** — a **port**. It is a
   dependency that crosses the package boundary. The arrow points from the
   outside box into the class (in-port) or from the class to the outside
-  box (out-port). Click a port to try to open the outside class's card.
+  box (out-port). Click a port: if it names one class its card opens,
+  otherwise the viewer jumps to that package.
 
 ### Arrows
 

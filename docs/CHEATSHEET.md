@@ -20,7 +20,7 @@ locally in standalone mode** and reloads the diagram without an agent.
 | A leaf module/class box (double-click) | Opens the **class card** (separate window) | Module `:ns`, `Level n`, `Crap μ … max … σ …`, member table with `--crap--` (Crap, CC, Cov) and `--mutation--` (killed, survived, uncovered) columns |
 | A member line on the class card | Opens the source file | Source window on that file, scrolled to and highlighting the `defn`/method |
 | The module name at the top of the class card | Opens the source file | Same file, at the top (no line highlight) |
-| A port or triangle ("Remove arrows" mode) | Same as double-clicking the class | Class card opens |
+| A port or triangle ("Remove arrows" mode) | A port naming one class opens its card; a package port jumps to that package | Class card, or the package's boxes |
 | Empty canvas | Deselects | Inspector returns to the help text; a pinned class card unpins |
 | Hover an arrow | Shows the bundle popup | Every `from -> to` pair that arrow collapses; violating pairs in red |
 | Hover a triangle ("Remove arrows" mode) | Shows the dependency list | `from -> to` list; red if any bundled pair violates the dependency rule |

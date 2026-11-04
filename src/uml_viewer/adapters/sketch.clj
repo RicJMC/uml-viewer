@@ -894,6 +894,10 @@
     (drill-hit? sel n)
     (events/drill state (events/layer-id sel))
 
+    (and (= :port (:kind sel))
+         (nil? (hit/class-by-id (events/card-scene state) (:id sel))))
+    (events/jump-to state (:id sel))
+
     (card-hit? sel n)
     (open-card! state (:id sel))
 

@@ -145,6 +145,17 @@
     (seq (:focus state)) (rebuild (update state :focus pop))
     :else state))
 
+(defn jump-to
+  "Navigate to the namespace path named by a port id. A port that names
+  one class still opens that class's card; this is the fallback for a
+  port whose endpoint is a whole package."
+  [state id]
+  (if (nil? id)
+    state
+    (rebuild (assoc state
+               :focus (mapv keyword (str/split (name id) #"\."))
+               :open-layer nil))))
+
 (defn- view-classes [doc path]
   (mapcat :classes (:packages (hierarchy/view-at doc path))))
 
