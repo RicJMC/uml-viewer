@@ -103,3 +103,88 @@
         (should= #{[:order :platform.db :dependency]
                    [:order :jackc.pgx :dependency]}
                  edges)))))
+
+(describe "go interfaces and embedding"
+  (it "links interface implementations and cross-package embedding"
+    (let [dir (temp-module)]
+      (spit-file dir "go.mod" "module example.com/bank\n\ngo 1.23\n")
+      (spit-file dir "deps/deps.go"
+                 (str "package deps\n\n"
+                      "type Reader interface {\n"
+                      "\tGet(id int) (string, error)\n"
+                      "\tList() []string\n"
+                      "}\n\n"
+                      "type Store interface {\n"
+                      "\tReader\n"
+                      "\tPut(id int, v string) error\n"
+                      "}\n\n"
+                      "type Clock interface {\n"
+                      "\tNow() int64\n"
+                      "}\n"))
+      (spit-file dir "model/model.go"
+                 (str "package model\n\n"
+                      "type Base struct{ ID int }\n\n"
+                      "type User[T any] struct {\n"
+                      "\tBase\n"
+                      "\tData T\n"
+                      "}\n"))
+      (spit-file dir "store/postgres/repo.go"
+                 (str "package postgres\n\n"
+                      "import (\n"
+                      "\td \"example.com/bank/deps\"\n"
+                      "\t\"example.com/bank/model\"\n"
+                      ")\n\n"
+                      "type (\n"
+                      "\tRepo struct {\n"
+                      "\t\t*model.Base\n"
+                      "\t\tdb string `json:\"db}\"`\n"
+                      "\t}\n"
+                      "\tcache map[string]struct{}\n"
+                      ")\n\n"
+                      "func (r *Repo) Get(id int) (string, error) { return \"\", nil }\n"
+                      "func (r *Repo) List() []string { return nil }\n"
+                      "func (r Repo) Put(id int, v string) error { return nil }\n"
+                      "func helper() {}\n\n"
+                      "var _ d.Clock = nil\n"))
+      (spit-file dir "memory/mem.go"
+                 (str "package memory\n\n"
+                      "import \"example.com/bank/model\"\n\n"
+                      "type Mem struct {\n"
+                      "\tInner struct {\n"
+                      "\t\tmodel.Base\n"
+                      "\t}\n"
+                      "}\n\n"
+                      "func (m *Mem) Now() int64 { return 0 }\n"
+                      "func (m *Mem) Get(id int) (string, error) { return \"\", nil }\n"
+                      "func (m *Mem) List() []string { return nil }\n"))
+      (spit-file dir "audit/audit.go"
+                 (str "package audit\n\n"
+                      "import \"example.com/bank/deps\"\n\n"
+                      "type Log interface {\n"
+                      "\tdeps.Reader\n"
+                      "\tAppend(s string)\n"
+                      "}\n"))
+      (spit-file dir "journal/journal.go"
+                 (str "package journal\n\n"
+                      "type J struct{}\n\n"
+                      "func (j *J) Append(s string) {}\n"
+                      "func (j *J) Get(id int) (string, error) { return \"\", nil }\n"
+                      "func (j *J) List() []string { return nil }\n"))
+      (let [g (graph/scan (graph/lookup :go) dir {:prefix "example.com.bank"})
+            by-id (into {} (map (juxt :id identity) (:classes g)))
+            typed (set (keep (fn [{:keys [from to kind]}]
+                               (when (not= :dependency kind) [from to kind]))
+                             (:edges g)))]
+        (should= :interface (:stereotype (by-id :deps)))
+        (should= :interface (:stereotype (by-id :audit)))
+        (should-be-nil (:stereotype (by-id :model)))
+        (should-be-nil (:stereotype (by-id :store.postgres)))
+        (should= #{[:store.postgres :deps :implements]
+                   [:store.postgres :model :inheritance]
+                   [:memory :deps :implements]
+                   [:journal :deps :implements]
+                   [:journal :audit :implements]
+                   [:audit :deps :inheritance]}
+                 typed)
+        (should= ["Repo" "Repo.Get" "Repo.List" "Repo.Put"]
+                 (mapv :name (:ops (by-id :store.postgres))))))))
