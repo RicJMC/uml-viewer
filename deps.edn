@@ -30,6 +30,7 @@
            :jvm-opts ["-Dapple.awt.UIElement=true"]
            :main-opts ["-m" "clj-mutate.core"]}
   :ir {:main-opts ["-m" "uml-viewer.main.ir-generator"]}
+  :cpp-ir {:main-opts ["-m" "uml-viewer.main.cpp-adapter"]}
   :discover {:main-opts ["-m" "uml-viewer.main.discover"]}
   :metrics {:main-opts ["-m" "uml-viewer.main.metrics"]}
   :run {:extra-deps {quil/quil {:mvn/version "4.3.1563"}}

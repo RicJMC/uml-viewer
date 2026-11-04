@@ -152,11 +152,50 @@
       (= (.charAt ^String source j) quote) (inc j)
       :else (recur (inc j) false))))
 
+(defn- merged-module-owners [scans]
+  (reduce (fn [owners scan]
+            (reduce-kv (fn [acc module id]
+                         (update acc module (fnil conj []) id))
+                       owners
+                       (or (:module-owners scan) {})))
+          {}
+          scans))
+
+(defn- resolve-module-edge [owners edge]
+  (let [ids (distinct (get owners (:module edge)))]
+    (-> edge
+        (assoc :to (if (= 1 (count ids)) (first ids) (:to edge)))
+        (dissoc :module))))
+
+(defn- edges-for-scan [owners scan]
+  (if (contains? scan :module-imports)
+    (map #(resolve-module-edge owners %) (:module-imports scan))
+    (:edges scan)))
+
+(defn- replaced-module-targets [owners scans]
+  (->> scans
+       (mapcat :module-imports)
+       (keep (fn [edge]
+               (let [resolved (resolve-module-edge owners edge)]
+                 (when (not= (:to edge) (:to resolved)) (:to edge)))))
+       set))
+
+(defn- prune-replaced-foreigns [classes edges replaced]
+  (let [referenced (set (mapcat (juxt :from :to) edges))]
+    (->> classes
+         (remove #(and (:foreign %)
+                       (replaced (:id %))
+                       (not (referenced (:id %)))))
+         vec)))
+
 (defn merge-scans
   "Combine language scans into one graph.
   Each scan is `{:classes :edges :commands :invokes}`.
   `:commands` maps a class id to command names. `:invokes` maps a class id
-  to names it calls. A call becomes a `:dependency` on the command's class."
+  to names it calls. A call becomes a `:dependency` on the command's class.
+  `:module-owners` maps source-language module names to class ids, while
+  `:module-imports` carries edges with `:module`; a unique owner across scans
+  replaces the import's local or foreign `:to`."
   [scans]
   (let [scans (vec scans)
         classes (mapcat :classes scans)
@@ -172,18 +211,83 @@
                             (or (first (remove :foreign cs))
                                 (first cs))))
                         (distinct (map :id classes)))
-          owners (into {}
-                       (for [scan scans
-                             [id cmds] (:commands scan)
-                             cmd cmds]
-                         [cmd id]))
+          module-owners (merged-module-owners scans)
+          replaced-targets (replaced-module-targets module-owners scans)
+          source-edges (mapcat #(edges-for-scan module-owners %) scans)
+          command-owners (into {}
+                               (for [scan scans
+                                     [id cmds] (:commands scan)
+                                     cmd cmds]
+                                 [cmd id]))
           linked (for [scan scans
                        [id names] (:invokes scan)
                        name names
-                       :let [to (get owners name)]
+                       :let [to (get command-owners name)]
                        :when (and to (not= to id))]
                    {:from id :to to :kind :dependency})
-          edges (->> (concat (mapcat :edges scans) linked)
+          edges (->> (concat source-edges linked)
+                     (remove #(= (:from %) (:to %)))
                      distinct
-                     vec)]
+                     vec)
+          classes (prune-replaced-foreigns classes edges replaced-targets)]
       {:classes classes :edges edges})))
+
+(defn- indent [line]
+  (count (re-find #"^[ \t]*" line)))
+
+(defn- closer? [line]
+  (boolean (re-matches #"\s*(end\b.*|[}\])]+[;,]?\s*)" line)))
+
+(defn member-end
+  "Last line of the member starting at 1-based line `start` of `text`:
+  the line before the first later non-blank line indented no deeper,
+  or that line itself when it closes the member (`end`, `}`). Never
+  past `limit`."
+  [text start limit]
+  (let [src (str/split-lines text)
+        own (indent (nth src (dec start) ""))
+        stop (some (fn [n]
+                     (let [line (nth src (dec n))]
+                       (when (and (not (str/blank? line)) (<= (indent line) own))
+                         (if (closer? line) n (dec n)))))
+                   (range (inc start) (inc (count src))))]
+    (min limit (or stop (count src)))))
+
+(defn line-starts
+  "Offset where each line of `text` starts."
+  [text]
+  (into [0] (keep-indexed (fn [i c] (when (= \newline c) (inc i)))) (str text)))
+
+(defn line-at
+  "1-based line holding offset `pos`, given `line-starts`."
+  [starts pos]
+  (let [i (java.util.Collections/binarySearch starts (long pos))]
+    (if (neg? i) (- (inc i)) (inc i))))
+
+(defn enclosing-member
+  "Name of the member (`{:name :line}`, in line order) whose span holds
+  1-based `line` of `text`, or nil. A span ends at `member-end`, never
+  past the next member."
+  [text members line]
+  (let [ms (vec (sort-by :line members))
+        limits (conj (mapv (comp dec :line) (rest ms)) Long/MAX_VALUE)]
+    (some (fn [[m limit]]
+            (when (<= (:line m) line (member-end text (:line m) limit))
+              (:name m)))
+          (map vector ms limits))))
+
+(def site-cap 20)
+
+(defn sites-by-target
+  "`{target-id [site …]}` from `[target-id site]` pairs, in line order,
+  at most `site-cap` per target. A site is `{:line :in? :call?}`."
+  [pairs]
+  (into {}
+        (map (fn [[id ps]]
+               [id (->> ps (map second) distinct (sort-by :line) (take site-cap) vec)]))
+        (group-by first pairs)))
+
+(defn with-sites
+  "Each edge gains the `:sites` its target has in `sites`."
+  [edges sites]
+  (mapv #(if-let [s (seq (get sites (:to %)))] (assoc % :sites (vec s)) %) edges))

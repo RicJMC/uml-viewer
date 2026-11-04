@@ -161,6 +161,11 @@
   (cond-> m
     (:ops leaf) (assoc :ops (:ops leaf))
     (:fields leaf) (assoc :fields (:fields leaf))
+    (:source-ident leaf) (assoc :source-ident (:source-ident leaf))
+    (:qualified-name leaf) (assoc :qualified-name (:qualified-name leaf))
+    (:clang-uml-id leaf) (assoc :clang-uml-id (:clang-uml-id leaf))
+    (:language leaf) (assoc :language (:language leaf))
+    (:metrics-status leaf) (assoc :metrics-status (:metrics-status leaf))
     hide? (assoc :hide-members true)
     (seq kids) (assoc :contents kids)))
 
@@ -318,11 +323,12 @@
         parts (partition-edges (:edges doc) ids path idx)
         foreign (:foreign parts)
         visible (into ids (set (map :id foreign)))
+        relations (into (:internal parts) (:foreign-edges parts))
+        relations (if (:preserve-parallel-edges doc)
+                    relations
+                    (policy/merge-edges relations))
         edges (filterv #(visible-edge? visible %)
-                       (policy/apply-edge-kinds
-                         (policy/merge-edges
-                           (into (:internal parts) (:foreign-edges parts)))
-                         kinds omit))
+                       (policy/apply-edge-kinds relations kinds omit))
         boxes (mapv #(with-ports parts %) boxes)]
     (assemble-view (label-at doc path) boxes edges foreign)))
 
@@ -351,9 +357,12 @@
         (:packages view)))
 
 (defn- leaf-dep [e]
-  {:from (or (:orig-from e) (:from e))
-   :to (or (:orig-to e) (:to e))
-   :violating (boolean (:violating e))})
+  (cond-> {:from (or (:orig-from e) (:from e))
+           :to (or (:orig-to e) (:to e))
+           :violating (boolean (:violating e))}
+    (:kind e) (assoc :kind (:kind e))
+    (:label e) (assoc :label (:label e))
+    (:access e) (assoc :access (:access e))))
 
 (defn- merge-direction-edges [edges]
   (->> edges

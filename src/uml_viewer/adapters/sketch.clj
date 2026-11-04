@@ -48,7 +48,9 @@
        "   diagram above Proposals to return to the namespace tree. If instructed,\n"
        "   add a named proposal to :proposals in the policy (default name is a\n"
        "   timestamp) and regenerate the IR.\n"
-       "TypeScript, Rust, and Python are scanners beside Clojure. A Clojure project keeps\n"
+       "TypeScript, Rust, Python, Go, Kotlin, C#, Ruby, and Haskell are scanners\n"
+       "beside Clojure. C++ is converted from clang-uml JSON by clj -M:cpp-ir.\n"
+       "A Clojure project keeps\n"
        ":lang :clojure (the default) and the CRAP and mutation steps below.\n"
        "Another language sets :lang. More than one language sets :sources, each\n"
        "entry {:lang :root :prefix?}. The policy :prefix is stripped to make\n"
@@ -57,6 +59,8 @@
        "module id are still the tree. Do not invent packages. A TypeScript\n"
        "invoke(\"name\") depends on the Rust #[tauri::command] of that name.\n"
        "Python is one class per .py module. import and from-import are dependencies.\n"
+       "Go is one class per package. Kotlin and C# are one class per type.\n"
+       "Ruby is one class per file. Haskell is one class per module.\n"
        "class Child(Base) is inheritance when Base is a project module. A base of\n"
        "Protocol or ABC is implements.\n"
        "For a non-Clojure language, run that language's CRAP and mutation tools\n"
@@ -571,6 +575,9 @@
     (let [y (+ (:y event) (:scroll state 0))
           rows (detail/rows model)]
       (cond
+        (detail/source-at rows y)
+        (source-window/open-member-window! (:source @!bridge) (detail/source-at rows y))
+
         (detail/module-at rows y)
         (source-window/open-member-window! (:source @!bridge) (detail/member-ident model))
 

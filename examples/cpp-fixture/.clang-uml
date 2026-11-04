@@ -1,0 +1,14 @@
+compilation_database_dir: ../../target/cpp-fixture-build
+output_directory: ../../target/cpp-fixture-output
+generate_method_arguments: full
+diagrams:
+  cpp_fixture:
+    type: class
+    glob:
+      - src/*.cpp
+    skip_redundant_dependencies: false
+    include:
+      namespaces:
+        - app
+        - model
+        - store

@@ -2,10 +2,15 @@
   (:require [clojure.java.io :as io]
             [uml-viewer.application.ir-generator :as ir-generator]
             [uml-viewer.clojure-language.graph-clojure]
+            [uml-viewer.csharp-language.graph-csharp]
+            [uml-viewer.go-language.graph-go]
             [uml-viewer.graph :as graph]
+            [uml-viewer.haskell-language.graph-haskell]
+            [uml-viewer.kotlin-language.graph-kotlin]
             [uml-viewer.languages.external]
             [uml-viewer.python-language.graph-python]
             [uml-viewer.python-language.graph-python-external]
+            [uml-viewer.ruby-language.graph-ruby]
             [uml-viewer.rust-language.graph-rust]
             [uml-viewer.typescript-language.graph-typescript])
   (:gen-class))

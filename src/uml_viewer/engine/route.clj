@@ -15,11 +15,17 @@
   (case kind
     :inheritance :triangle
     :implements :triangle
-    :composition :diamond-fill
-    :aggregation :diamond
+    :composition nil
+    :aggregation nil
     :association :open
     :dependency :open
     :open))
+
+(defn- tail [kind]
+  (case kind
+    :composition :diamond-fill
+    :aggregation :diamond
+    nil))
 
 (defn- port-on-t [r face t]
   (let [t (max 0.12 (min 0.88 t))]
@@ -534,5 +540,6 @@
                       pts (constrain-attach (:rect from) (:rect to) raw)]
                   (assoc (dissoc e :from-n :to-n)
                     :points (vec pts)
-                    :head (head (:kind e)))))
+                    :head (head (:kind e))
+                    :tail (tail (:kind e)))))
               annotated)))))

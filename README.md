@@ -695,9 +695,49 @@ that owns `#[tauri::command] fn read_text`, as a `:dependency`. Two
 project classes with the same id are an error. When a dependency and an
 `:implements` edge join the same pair, the IR keeps `:implements`.
 
-CRAP and mutation for TypeScript, Rust, and Python come from separate
-tools. The overlay joins a snapshot to the class whose `:ns` equals that
-namespace. Otherwise the class id owns that name (`bookwriter.model`
+**Go** (`uml-viewer.go-language.graph-go`) emits one class per package
+directory. The module path comes from `go.mod`; a project import is a
+dependency, a standard-library import is ignored, and another module is
+foreign (named by its repository, so `github.com/jackc/pgx/v5/pgxpool`
+becomes `jackc.pgx`). Exported functions and methods are `:ops`; methods
+are `Type.Method`. `vendor`, `testdata`, and `_test.go` files are skipped.
+
+**Kotlin** (`uml-viewer.kotlin-language.graph-kotlin`) emits one class per
+`class`, `interface`, `object`, or `enum`, plus a `<File>Kt` class for
+top-level functions. `:ns` is the name JaCoCo reports, so
+`demo.Shape.Companion` and `demo.GeometryKt` join directly. Test source
+sets (`src/test`, `jvmTest`, `commonTest`, `testFixtures`, and the like)
+are skipped.
+
+**C#** (`uml-viewer.csharp-language.graph-csharp`) emits one class per
+type. Namespaces are the tree, `using` and type references are
+dependencies, and methods are `:ops` for the overlay. `bin`, `obj`,
+`*.g.cs`, `*.Designer.cs`, and test projects are skipped.
+
+**Ruby** (`uml-viewer.ruby-language.graph-ruby`) emits one class per `.rb`
+or `.rake` file. Constants resolve the way Zeitwerk autoloads them, so a
+Rails reference needs no `require`. A Rails root walks `app/*` (and
+`concerns`) and `lib`. Grape HTTP endpoints and Rake tasks are members, so
+they open at their definition. `_spec.rb` and `_test.rb` files are
+skipped.
+
+**Haskell** (`uml-viewer.haskell-language.graph-haskell`) emits one class
+per module and `import` dependencies. Module headers, indented/grouped/
+operator signatures, tabs, standalone pragmas, and CPP lines are read
+without running GHC. `dist-newstyle`, `.stack-work`, and `test` trees are
+skipped. Two build units that both define `Main` need separate
+`:sources` entries with distinct `:prefix` values.
+
+**C++** has no source scanner in the viewer. A separate converter reads
+the JSON class diagram produced by [clang-uml](https://clang-uml.github.io/)
+and writes a hierarchical EDN document with namespaces, classes,
+inheritance, dependency, association, and aggregation relationships,
+overload identities, and exact source locations. See
+[C++ support](#c-support).
+
+CRAP and mutation for TypeScript, Rust, Python, Go, Java/Kotlin, and .NET
+come from separate tools. The overlay joins a snapshot to the class whose
+`:ns` equals that namespace. Otherwise the class id owns that name (`bookwriter.model`
 owns `model`), a dotted child rolls up (`pdf` owns `pdf.Layout`), and
 the policy prefix belongs to the single undotted Rust class. `::` is
 read as `.`. A source file drawn inside its directory keeps its own
@@ -712,6 +752,48 @@ is opt-in: set `:lang :python-external`. It shells out to the
 reports every member with complexity and exact source spans, and marks
 the IR `:metrics-mode :verified`. Use it when you want the Python
 measurement workflow; the built-in `:python` scanner needs no tool.
+
+
+## C++ support
+
+The C++ path converts [clang-uml](https://clang-uml.github.io/) JSON; it
+does not parse C++ in the viewer. From a project with a `.clang-uml`
+configuration:
+
+```bash
+clang-uml -c .clang-uml -n class_diagram -g json
+clj -M:cpp-ir compile_commands.json.cxx.json diagram.edn /path/to/project
+clj -M:run diagram.edn
+```
+
+`clj -M:cpp-ir <clang-uml.json> <out.edn> <source-root>` keeps qualified
+class identities, distinct overloads, relationship labels/access, and
+source file/line/column. Unsupported or unresolved entities are reported
+in `:diagnostics`. Metrics are `:unavailable` for C++, so the viewer skips
+the metric overlay and draws those boxes neutral. The converter does not
+infer missing relationships. See [docs/cpp-clang-uml.md](docs/cpp-clang-uml.md)
+for setup and limits.
+
+## Go metrics
+
+`tools/go-metrics` turns a Go coverprofile and
+[gremlins](https://github.com/go-gremlins/gremlins) reports into the same
+`.metrics/crap.edn` and `.metrics/mutate/<namespace>.edn` snapshots the
+overlay reads. It takes package names from the generated IR, so it agrees
+with the Go scanner about what a package is. Methods are `Type.Method`;
+unexported names stay private. A repeated name such as one `init` per file
+becomes `init (file.go:12)` and opens that one.
+
+```bash
+go -C tools/go-metrics install .
+clj -M:ir                         # writes :classes, including :ns
+go test -coverpkg=./... -coverprofile=cover.out ./...
+(cd internal/team && GOFLAGS=-count=1 gremlins unleash --timeout-coefficient 5 -o /tmp/team.json)
+go-metrics -ir examples/shop.edn -cover cover.out -mutation internal/team=/tmp/team.json
+```
+
+Rows written by another language's tool are kept; go-metrics replaces only
+its own rows (`:tool "go-metrics"`).
 
 ## IR
 

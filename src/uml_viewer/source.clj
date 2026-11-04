@@ -95,6 +95,7 @@
            :file path
            :body src
            :line (when named? (start-line impl src ident))
+           :column (when named? (:column ident))
            :lang lang})))))
 
 (defn member-source

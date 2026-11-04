@@ -107,10 +107,14 @@
     (str ns-name)))
 
 (defn- normalize-ns
-  "Crapper separates Rust with `::` and every other language with `.`."
+  "Crapper separates Rust with `::`, names a Go package by its import path
+  (`mod/internal/x`, a method's `mod/internal/x.Type`), and every other
+  language with `.`. All become dotted."
   [s]
   (when s
-    (str/replace (str s) #"::" ".")))
+    (-> (str s)
+        (str/replace #"::" ".")
+        (str/replace #"/" "."))))
 
 (defn- prefix-name [prefix]
   (cond
@@ -143,6 +147,8 @@
       (= id-name snap) [1 0]
       (and id-name (str/starts-with? snap (str id-name ".")))
       [2 (- (count id-name))]
+      (and ns-name (str/starts-with? snap (str ns-name ".")))
+      [2 (- (count ns-name))]
       (and rust-root (= c rust-root) prefix (= snap prefix)) [3 0]
       :else nil)))
 
@@ -273,7 +279,8 @@
 
 (defn- apply-scores
   [doc metrics]
-  (if (and (empty? (:crap metrics)) (empty? (:mutate metrics)))
+  (if (or (= :cpp (:language doc))
+          (and (empty? (:crap metrics)) (empty? (:mutate metrics))))
     doc
     (let [owners (owners-by-ns (doc-classes doc)
                                (:prefix doc)
