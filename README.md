@@ -215,9 +215,11 @@ default; `--host 0.0.0.0` exposes it to the LAN for a phone or tablet, and
 the **←** and **Fit** buttons, so boxes stay readable on a phone. The page
 has no authentication and no TLS: anyone who can reach the port can read the
 diagram and the source of the classes it shows, and can post viewer events,
-including a local Regen. Keep the loopback default, and use
-`--host 0.0.0.0` only on a trusted LAN or behind a proxy that authenticates.
-See [docs/web-viewer.md](docs/web-viewer.md).
+including a local Regen. The server still refuses posts from other origins:
+`Host` must name this machine and `Origin`, when sent, must be the server's
+own (403 otherwise), and bodies are capped at 16 KB. Keep the loopback
+default, and use `--host 0.0.0.0` only on a trusted LAN or behind a proxy
+that authenticates. See [docs/web-viewer.md](docs/web-viewer.md).
 
 From **any Clojure project** you want to view (no local uml-viewer checkout
 needed):
