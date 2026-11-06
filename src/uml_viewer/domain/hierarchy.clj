@@ -2,7 +2,8 @@
   "Namespace-tree views: one level of children, collapsed inter-layer edges."
   (:require [clojure.string :as str]
             [uml-viewer.domain.config :as config]
-            [uml-viewer.domain.policy :as policy]))
+            [uml-viewer.domain.policy :as policy]
+            [uml-viewer.graph :as graph]))
 
 (defn- as-id [x]
   (keyword (name x)))
@@ -35,9 +36,15 @@
         id
         (join-id (take (inc n) s))))))
 
+(defn- label-part [part]
+  (if (and (seq part) (re-find #"[A-Z]" part))
+    (str (str/upper-case (subs part 0 1)) (subs part 1))
+    (str/capitalize part)))
+
 (defn- node-label [id]
-  (->> (str/split (name (last-seg id)) #"\-")
-       (map str/capitalize)
+  (->> (str/split (name (last-seg id)) #"-")
+       (remove str/blank?)
+       (map label-part)
        (str/join)))
 
 (defn- module-name
@@ -46,6 +53,21 @@
   (if (:proposal-group? c)
     (or (:name c) (node-label (:id c)))
     (node-label (:id c))))
+
+(defn- rust-file?
+  "True when `file` is a Rust source file."
+  [file]
+  (when-let [base (graph/file-base file)]
+    (str/ends-with? (str/lower-case base) ".rs")))
+
+(defn- box-name
+  "Directory boxes use the namespace segment. Every Rust source file
+  is named by its filename."
+  [leaf id directory?]
+  (let [file (:file leaf)]
+    (if (and (not directory?) (rust-file? file))
+      (graph/file-base file)
+      (node-label id))))
 
 (defn- has-descendants? [id classes]
   (let [pfx (str (name id) ".")]
@@ -71,13 +93,15 @@
 (defn- contents-of [classes path node-id]
   (let [next-path (conj (vec path) (last-seg node-id))
         kids (nodes-at classes next-path)
-        others (remove #(= % node-id) kids)]
+        others (remove #(= % node-id) kids)
+        by-id (index-classes classes)]
     (when (seq others)
       (mapv (fn [cid]
-              {:id cid
-               :name (node-label cid)
-               :drill? (and (not= cid node-id)
-                            (has-descendants? cid classes))})
+              (let [directory? (and (not= cid node-id)
+                                    (has-descendants? cid classes))]
+                {:id cid
+                 :name (box-name (get by-id cid) cid directory?)
+                 :drill? directory?}))
             kids))))
 
 (defn- under-id? [c id]
@@ -85,39 +109,17 @@
     (or (= id (:id c))
         (str/starts-with? (name (:id c)) pfx))))
 
-(defn- measurement-state [classes]
-  (cond-> {}
-    (some :metrics-status classes) (assoc :metrics-status
-                                         (if (every? #(= "current" (:metrics-status %)) classes)
-                                           "current" "missing"))
-    (some #(= "partial" (:mutation-status %)) classes) (assoc :mutation-status "partial")))
-
-(defn- crap-value [component]
-  (if (:metrics-status component) (:crap component) (or (:crap component) {})))
-
 (defn- rolled-crap
-  "Worst (μ+σ) among `id` and its descendants.
-  A class with no CRAP data counts as red."
+  "Function-weighted μ, max, and σ for `id` and its descendants.
+  A class with no CRAP data counts as red, once per function."
   [classes id]
-  (let [worst (reduce config/worse-crap nil
-                      (keep (fn [c]
-                              (when (under-id? c id)
-                                (crap-value c)))
-                            classes))]
-    (when (:mu worst)
-      worst)))
+  (config/pool-crap (filter #(under-id? % id) classes)))
 
 (defn- rolled-mutants
-  "Worst mutation ratio among `id` and its descendants.
-  A class with no mutant data counts as red."
+  "Summed mutants for `id` and its descendants.
+  A class with no mutant data counts as one failed trial per function."
   [classes id]
-  (let [worst (reduce config/worse-mutants nil
-                      (keep (fn [c]
-                              (when (under-id? c id)
-                                (select-keys c [:killed :survived :uncovered])))
-                            classes))]
-    (when (or (:killed worst) (:survived worst))
-      worst)))
+  (config/pool-mutants (filter #(under-id? % id) classes)))
 
 (defn- rolled-level
   "Highest (outermost) :level among `id` and its descendants."
@@ -126,34 +128,61 @@
     (when (seq lvs)
       (apply max lvs))))
 
+(defn- own-crap
+  "CRAP map on this source file, or nil. Files do not inherit."
+  [leaf]
+  (when (:mu (:crap leaf))
+    (:crap leaf)))
+
+(defn- own-mutants
+  "Mutation counts on this source file, or nil. Files do not inherit."
+  [leaf]
+  (let [m (select-keys (or leaf {}) [:killed :survived :uncovered])]
+    (when (or (:killed m) (:survived m))
+      m)))
+
+(defn- with-leaf-identity [m leaf lv]
+  (cond-> m
+    (:ns leaf) (assoc :ns (:ns leaf))
+    (:lang leaf) (assoc :lang (:lang leaf))
+    (:file leaf) (assoc :file (:file leaf))
+    (:metrics-status leaf) (assoc :metrics-status (:metrics-status leaf))
+    (:mutation-status leaf) (assoc :mutation-status (:mutation-status leaf))
+    (some? lv) (assoc :level lv)
+    (:stereotype leaf) (assoc :stereotype (:stereotype leaf))))
+
+(defn- with-leaf-scores [m leaf crap mut]
+  (cond-> m
+    crap (assoc :crap crap)
+    mut (merge mut)
+    (:coverage leaf) (assoc :coverage (:coverage leaf))))
+
+(defn- with-leaf-members [m leaf kids hide?]
+  (cond-> m
+    (:ops leaf) (assoc :ops (:ops leaf))
+    (:fields leaf) (assoc :fields (:fields leaf))
+    (:source-ident leaf) (assoc :source-ident (:source-ident leaf))
+    (:qualified-name leaf) (assoc :qualified-name (:qualified-name leaf))
+    (:clang-uml-id leaf) (assoc :clang-uml-id (:clang-uml-id leaf))
+    (:language leaf) (assoc :language (:language leaf))
+    (:metrics-status leaf) (assoc :metrics-status (:metrics-status leaf))
+    hide? (assoc :hide-members true)
+    (seq kids) (assoc :contents kids)))
+
 (defn- view-class [idx classes path id]
   (let [leaf (get idx id)
         kids (contents-of classes path id)
         drill? (boolean (seq kids))
         hide? drill?
-        crap (rolled-crap classes id)
-        mut (rolled-mutants classes id)
-        state (measurement-state (filter #(under-id? % id) classes))
+        crap (if drill? (rolled-crap classes id) (own-crap leaf))
+        mut (if drill? (rolled-mutants classes id) (own-mutants leaf))
         lv (rolled-level classes id)]
-    (cond-> {:id id
-             :name (node-label id)
-             :drill? drill?}
-      (seq state) (merge state)
-      (:cc leaf) (assoc :cc (:cc leaf))
-      (:uncovered leaf) (assoc :uncovered (:uncovered leaf))
-      (:sites leaf) (assoc :sites (:sites leaf))
-      (:ns leaf) (assoc :ns (:ns leaf))
-      (some? lv) (assoc :level lv)
-      (:stereotype leaf) (assoc :stereotype (:stereotype leaf))
-      crap (assoc :crap crap)
-      mut (assoc :killed (:killed mut)
-                 :survived (:survived mut)
-                 :uncovered (:uncovered mut))
-      (:coverage leaf) (assoc :coverage (:coverage leaf))
-      (:ops leaf) (assoc :ops (:ops leaf))
-      (:fields leaf) (assoc :fields (:fields leaf))
-      hide? (assoc :hide-members true)
-      (seq kids) (assoc :contents kids))))
+    (-> {:id id
+         :name (box-name leaf id drill?)
+         :drill? drill?}
+        (with-leaf-identity leaf lv)
+        (with-leaf-scores leaf crap mut)
+        (with-leaf-members leaf kids hide?))))
 
 (defn- collapse-end [id path idx]
   (if (:foreign (get idx id))
@@ -189,38 +218,97 @@
                           :foreign true
                           :shape :oval}))))
 
+(defn- in-view? [id ids]
+  (boolean (and id (ids id))))
+
+(defn- edge-ends [e ids path idx]
+  (let [from (collapse-end (:from e) path idx)
+        to-in (collapse-end (:to e) path idx)]
+    {:from from
+     :to-in to-in
+     :to-ext (when-not (in-view? to-in ids)
+               (external-end (:to e) path idx))
+     :from-ext (when-not (in-view? from ids)
+                 (external-end (:from e) path idx))
+     :from-here? (in-view? from ids)
+     :to-here? (in-view? to-in ids)}))
+
+(defn- internal-edge? [ends]
+  (and (:from-here? ends)
+       (:to-here? ends)
+       (not= (:from ends) (:to-in ends))))
+
+(defn- foreign-out? [ends]
+  (and (:from-here? ends) (:foreign (:to-ext ends))))
+
+(defn- port-out? [ends]
+  (and (:from-here? ends) (:to-ext ends)))
+
+(defn- foreign-in? [ends]
+  (and (:to-here? ends) (:foreign (:from-ext ends))))
+
+(defn- port-in? [ends]
+  (and (:to-here? ends) (:from-ext ends)))
+
+(defn- route-edge [acc e {:keys [from to-in to-ext from-ext] :as ends}]
+  (cond
+    (internal-edge? ends)
+    (update acc :internal conj
+            (cond-> (assoc e :from from :to to-in)
+              (or (not= from (:from e)) (not= to-in (:to e)))
+              (assoc :collapsed? true)))
+
+    (foreign-out? ends)
+    (add-foreign acc from to-ext e)
+
+    (port-out? ends)
+    (update acc :out add-port from to-ext)
+
+    (foreign-in? ends)
+    (add-foreign acc to-in from-ext (assoc e :from (:id from-ext) :to to-in))
+
+    (port-in? ends)
+    (update acc :in add-port to-in from-ext)
+
+    :else acc))
+
 (defn- partition-edges
   "In-view edges stay arrows. Foreign libs are ovals. Other off-view deps are ports."
   [edges ids path idx]
   (reduce
     (fn [acc e]
-      (let [from (collapse-end (:from e) path idx)
-            to-in (collapse-end (:to e) path idx)
-            to-ext (when-not (and to-in (ids to-in))
-                     (external-end (:to e) path idx))
-            from-ext (when-not (and from (ids from))
-                       (external-end (:from e) path idx))
-            from-here? (boolean (and from (ids from)))
-            to-here? (boolean (and to-in (ids to-in)))]
-        (cond
-          (and from-here? to-here? (not= from to-in))
-          (update acc :internal conj (assoc e :from from :to to-in))
-
-          (and from-here? (:foreign to-ext))
-          (add-foreign acc from to-ext e)
-
-          (and from-here? to-ext)
-          (update acc :out add-port from to-ext)
-
-          (and to-here? (:foreign from-ext))
-          (add-foreign acc to-in from-ext (assoc e :from (:id from-ext) :to to-in))
-
-          (and to-here? from-ext)
-          (update acc :in add-port to-in from-ext)
-
-          :else acc)))
+      (route-edge acc e (edge-ends e ids path idx)))
     {:internal [] :in {} :out {} :foreign [] :foreign-edges []}
     edges))
+
+(defn- order-at [doc path]
+  (or (get-in doc [:order (str/join "." (map name path))])
+      (when (empty? path) (:order doc))
+      []))
+
+(defn- visible-edge? [visible e]
+  (and (visible (:from e)) (visible (:to e))))
+
+(defn- with-ports [parts c]
+  (cond-> c
+    (seq (get-in parts [:in (:id c)]))
+    (assoc :in-deps (get-in parts [:in (:id c)]))
+    (seq (get-in parts [:out (:id c)]))
+    (assoc :out-deps (get-in parts [:out (:id c)]))))
+
+(defn- label-at [doc path]
+  (if (seq path)
+    (str/join "." (map name path))
+    (or (:title doc) "UML")))
+
+(defn- assemble-view [label boxes edges foreign]
+  (cond-> {:title label
+           :direction :tb
+           :packages [{:id :view
+                       :label label
+                       :classes boxes}]
+           :edges (vec edges)}
+    (seq foreign) (assoc :foreign foreign)))
 
 (defn view-at
   "One diagram: children of `path` as boxes, edges collapsed to that level."
@@ -230,40 +318,33 @@
         classes (vec (remove #(policy/omitted-id? (:id %) omit-ids)
                              (:classes doc)))
         idx (index-classes classes)
-        order (or (get-in doc [:order (str/join "." (map name path))])
-                  (when (empty? path) (:order doc))
-                  [])
-        node-ids (sort-ids (nodes-at classes path) order)
+        node-ids (sort-ids (nodes-at classes path) (order-at doc path))
         boxes (mapv #(view-class idx classes path %) node-ids)
         ids (set (map :id boxes))
         kinds (or (:edge-kinds doc) {})
         omit (or (:omit-edges doc) [])
         parts (partition-edges (:edges doc) ids path idx)
         foreign (:foreign parts)
-        foreign-ids (set (map :id foreign))
-        visible (into ids foreign-ids)
-        edges (filterv #(and (visible (:from %)) (visible (:to %)))
-                       (policy/apply-edge-kinds
-                         (policy/merge-edges
-                           (into (:internal parts) (:foreign-edges parts)))
-                         kinds omit))
-        boxes (mapv (fn [c]
-                      (cond-> c
-                        (seq (get-in parts [:in (:id c)]))
-                        (assoc :in-deps (get-in parts [:in (:id c)]))
-                        (seq (get-in parts [:out (:id c)]))
-                        (assoc :out-deps (get-in parts [:out (:id c)]))))
-                    boxes)
-        label (if (seq path)
-                (str/join "." (map name path))
-                (or (:title doc) "UML"))]
-    (cond-> {:title label
-             :direction :tb
-             :packages [{:id :view
-                         :label label
-                         :classes boxes}]
-             :edges (vec edges)}
-      (seq foreign) (assoc :foreign foreign))))
+        visible (into ids (set (map :id foreign)))
+        relations (into (:internal parts) (:foreign-edges parts))
+        relations (if (:preserve-parallel-edges doc)
+                    relations
+                    (policy/merge-edges relations))
+        ;; Inheritance, implements, and whole/part arrows are class-level
+        ;; facts. Once both ends collapse to namespace boxes, the honest
+        ;; component-level arrow is a plain dependency.
+        relations (mapv (fn [e]
+                          (if (and (:collapsed? e)
+                                   (contains? #{:inheritance :implements
+                                                :composition :aggregation}
+                                              (:kind e)))
+                            (assoc e :collapsed-kind (:kind e) :kind :dependency)
+                            e))
+                        relations)
+        edges (filterv #(visible-edge? visible %)
+                       (policy/apply-edge-kinds relations kinds omit))
+        boxes (mapv #(with-ports parts %) boxes)]
+    (assemble-view (label-at doc path) boxes edges foreign)))
 
 (defn proposal-layers
   "Normalized proposal layer maps on `doc`, or []."
@@ -290,9 +371,12 @@
         (:packages view)))
 
 (defn- leaf-dep [e]
-  {:from (or (:orig-from e) (:from e))
-   :to (or (:orig-to e) (:to e))
-   :violating (boolean (:violating e))})
+  (cond-> {:from (or (:orig-from e) (:from e))
+           :to (or (:orig-to e) (:to e))
+           :violating (boolean (:violating e))}
+    (:kind e) (assoc :kind (:kind e))
+    (:label e) (assoc :label (:label e))
+    (:access e) (assoc :access (:access e))))
 
 (defn- merge-direction-edges [edges]
   (->> edges
@@ -322,17 +406,17 @@
    :hide-members true})
 
 (defn- with-metrics [dummy classes]
-  (let [crap (reduce config/worse-crap nil
-                     (map (fn [c] (crap-value c)) classes))
-        mut (reduce config/worse-mutants nil
-                    (map #(select-keys % [:killed :survived :uncovered]) classes))
+  (let [crap (config/pool-crap classes)
+        mut (config/pool-mutants classes)
+        statuses (keep :mutation-status classes)
+        mstatus (when (seq statuses)
+                  (if (every? #(= "complete" %) statuses) "complete" "partial"))
         lv (when (seq (keep :level classes))
              (apply max (keep :level classes)))]
-    (cond-> (merge dummy (measurement-state classes))
-      (:mu crap) (assoc :crap crap)
-      (or (:killed mut) (:survived mut))
-      (assoc :killed (:killed mut) :survived (:survived mut)
-             :uncovered (:uncovered mut))
+    (cond-> (dissoc dummy :crap :killed :survived :uncovered :mut-gap)
+      crap (assoc :crap crap)
+      mut (merge mut)
+      mstatus (assoc :mutation-status mstatus)
       (some? lv) (assoc :level lv))))
 
 (defn- ensure-pkg-dummies [view]
@@ -468,9 +552,11 @@
 (defn- nested-group-box
   [group kids]
   (let [id (:id group)
-        crap (reduce config/worse-crap nil (keep :crap kids))
-        mut (reduce config/worse-mutants nil
-                    (map #(select-keys % [:killed :survived :uncovered]) kids))
+        crap (config/pool-crap kids)
+        mut (config/pool-mutants kids)
+        statuses (keep :mutation-status kids)
+        mstatus (when (seq statuses)
+                  (if (every? #(= "complete" %) statuses) "complete" "partial"))
         lv (when (seq (keep :level kids))
              (apply max (keep :level kids)))]
     (cond-> {:id id
@@ -485,12 +571,103 @@
                                 :name (module-name c)
                                 :drill? (boolean (:drill? c))})
                              kids)}
-      (seq (measurement-state kids)) (merge (measurement-state kids))
-      (:mu crap) (assoc :crap crap)
-      (or (:killed mut) (:survived mut))
-      (assoc :killed (:killed mut) :survived (:survived mut)
-             :uncovered (:uncovered mut))
+      crap (assoc :crap crap)
+      mut (merge mut)
+      mstatus (assoc :mutation-status mstatus)
       (some? lv) (assoc :level lv))))
+
+(defn- resolve-which [doc which]
+  (or (when (and (map? which) (:layers which)) which)
+      (when which (policy/proposal-by-id doc which))
+      (first (policy/named-proposals doc))))
+
+(defn- chosen-proposal [doc named]
+  (or (policy/normalize-proposal named)
+      (policy/normalize-proposal (:proposal doc))))
+
+(defn- merged-omit [doc proposal]
+  (set (concat (or (:omit doc) []) (or (:omit proposal) []))))
+
+(defn- visible-leaves [doc omit]
+  (into [] (remove #(or (:foreign %)
+                        (policy/omitted-id? (:id %) omit))
+                   (or (:classes doc) []))))
+
+(defn- spare-leaf? [claimed omit c]
+  (not (or (claimed-covers? (:id c) claimed)
+           (omit (:id c))
+           (policy/omitted-id? (:id c) omit))))
+
+(defn- as-module [c]
+  (assoc c :name (module-name c)))
+
+(defn- pick-entries [by-id stamped nse]
+  (letfn [(pick [nse]
+            (if (map? nse)
+              (let [kids (into [] (mapcat pick (:nses nse)))]
+                (if (seq kids)
+                  [(nested-group-box nse kids)]
+                  []))
+              (if-let [c (get by-id nse)]
+                [(as-module c)]
+                (mapv as-module
+                      (filterv #(id-under? (:id %) nse) stamped)))))]
+    (pick nse)))
+
+(defn- layer-package [by-id stamped layer]
+  (let [cs (into [] (mapcat #(pick-entries by-id stamped %) (:nses layer)))]
+    (when (seq cs)
+      {:id (keyword (str "proposal." (name (:id layer))))
+       :label (:label layer)
+       :classes cs})))
+
+(defn- top-id [id]
+  (keyword (first (str/split (name id) #"\."))))
+
+(defn- unassigned-entries
+  "Leftover leaves for Unassigned. A top-level ns that no layer claims
+  and no omit touches is its one box from the namespace tree, so a large
+  project does not lay out every leaf."
+  [root extras claimed omit]
+  (let [boxes (into {} (map (juxt :id identity) (mapcat :classes (:packages root))))
+        whole? (fn [t] (and (contains? boxes t)
+                            (not (claimed-covers? t claimed))
+                            (not (claimed-covers? t omit))))]
+    (->> extras
+         (map (fn [c]
+                (let [t (top-id (:id c))]
+                  (if (whole? t) (get boxes t) (as-module c)))))
+         distinct
+         vec)))
+
+(defn- proposal-packages [by-id stamped layers unassigned]
+  (vec (rseq
+         (cond-> (vec (keep #(layer-package by-id stamped %) layers))
+           (seq unassigned)
+           (conj {:id :proposal.unassigned
+                  :label "Unassigned"
+                  :classes unassigned})))))
+
+(defn- proposal-edges [doc ranks by-id pkgs root layers]
+  (let [visible (into (set (map :id (mapcat :classes pkgs)))
+                      (map :id (:foreign root)))
+        owners (into {} (mapcat #(group-owners (:nses %)) layers))
+        kinds (or (:edge-kinds doc) {})
+        omit-edges (or (:omit-edges doc) [])
+        remapped (policy/apply-edge-kinds
+                   (policy/merge-edges
+                     (remap-proposal-edges (or (:edges doc) []) visible owners))
+                   kinds omit-edges)]
+    (:edges (policy/restamp-ranks (vals by-id) remapped ranks))))
+
+(defn- attach-proposal [root pkgs edges notice]
+  (if (seq pkgs)
+    (assoc root
+      :title notice
+      :proposal true
+      :packages pkgs
+      :edges edges)
+    root))
 
 (defn proposal-view
   "Root view with named proposal packages around real nses.
@@ -502,66 +679,22 @@
   ([doc] (proposal-view doc nil))
   ([doc which]
    (let [root (view-at doc [])
-         named (or (when (and (map? which) (:layers which)) which)
-                   (when which (policy/proposal-by-id doc which))
-                   (first (policy/named-proposals doc)))
-         proposal (or (policy/normalize-proposal named)
-                      (policy/normalize-proposal (:proposal doc)))
+         named (resolve-which doc which)
+         proposal (chosen-proposal doc named)
          layers (or (:layers proposal) [])
-         rules (policy/normalize-rules proposal)
          ranks (policy/ranks-from-layers layers)
-         omit (set (concat (or (:omit doc) []) (or (:omit proposal) [])))
-         leaves (into [] (remove #(or (:foreign %)
-                                      (policy/omitted-id? (:id %) omit))
-                                 (or (:classes doc) [])))
-         stamped-leaves (:classes (policy/restamp-ranks leaves [] ranks rules))
-         by-id (into {} (map (juxt :id identity) stamped-leaves))
+         omit (merged-omit doc proposal)
+         leaves (visible-leaves doc omit)
+         stamped (:classes (policy/restamp-ranks leaves [] ranks))
+         by-id (into {} (map (juxt :id identity) stamped))
          claimed (set (mapcat #(policy/nse-ids (:nses %)) layers))
-         extras (filterv #(not (or (claimed-covers? (:id %) claimed)
-                                   (omit (:id %))
-                                   (policy/omitted-id? (:id %) omit)))
-                         stamped-leaves)
-         as-module (fn [c] (assoc c :name (module-name c)))
-         pick (fn pick [nse]
-                (if (map? nse)
-                  (let [kids (into [] (mapcat pick (:nses nse)))]
-                    (if (seq kids)
-                      [(nested-group-box nse kids)]
-                      []))
-                  (if-let [c (get by-id nse)]
-                    [(as-module c)]
-                    (mapv as-module
-                          (filterv #(id-under? (:id %) nse) stamped-leaves)))))
-         mk (fn [layer]
-              (let [cs (into [] (mapcat pick (:nses layer)))]
-                (when (seq cs)
-                  {:id (keyword (str "proposal." (name (:id layer))))
-                   :label (:label layer)
-                   :classes cs})))
-         pkgs (cond-> (vec (keep mk layers))
-                (seq extras)
-                (conj {:id :proposal.unassigned
-                       :label "Unassigned"
-                       :classes (mapv as-module extras)}))
-         pkgs (vec (rseq pkgs))
-         notice (or (:notice named) (:notice proposal) policy/proposal-notice)
-         visible (into (set (map :id (mapcat :classes pkgs)))
-                       (map :id (:foreign root)))
-         owners (into {} (mapcat #(group-owners (:nses %)) layers))
-         kinds (or (:edge-kinds doc) {})
-         omit-edges (or (:omit-edges doc) [])
-         remapped (policy/apply-edge-kinds
-                    (policy/merge-edges
-                      (remap-proposal-edges (or (:edges doc) []) visible owners))
-                    kinds omit-edges)
-         edges (:edges (policy/restamp-ranks (vals by-id) remapped ranks rules))]
-     (if (seq pkgs)
-       (assoc root
-         :title notice
-         :proposal true
-         :packages pkgs
-         :edges edges)
-       root))))
+         extras (filterv #(spare-leaf? claimed omit %) stamped)
+         pkgs (proposal-packages by-id stamped layers
+                                 (unassigned-entries root extras claimed omit))
+         notice (or (:notice named) (:notice proposal) policy/proposal-notice)]
+     (attach-proposal root pkgs
+                      (proposal-edges doc ranks by-id pkgs root layers)
+                      notice))))
 
 (defn- groups-in [nses]
   (mapcat (fn [x]
@@ -591,10 +724,9 @@
   (let [named (or (when (and (map? which) (:layers which)) which)
                   (when which (policy/proposal-by-id doc which))
                   (first (policy/named-proposals doc)))
-        proposal (or (policy/normalize-proposal named)
-                     (policy/normalize-proposal (:proposal doc)))
-        layers (:layers proposal [])
-        rules (policy/normalize-rules proposal)
+        layers (:layers (or (policy/normalize-proposal named)
+                            (policy/normalize-proposal (:proposal doc)))
+                        [])
         ranks (policy/ranks-from-layers layers)
         visible (into (set (map :id classes))
                       (map :id (:foreign view)))
@@ -603,7 +735,7 @@
                      (remap-proposal-edges (or (:edges doc) []) visible {}))
                    (or (:edge-kinds doc) {})
                    (or (:omit-edges doc) []))]
-    (:edges (policy/restamp-ranks classes remapped ranks rules))))
+    (:edges (policy/restamp-ranks classes remapped ranks))))
 
 (defn layer-view
   "One proposal package as the diagram, with its classes visible.

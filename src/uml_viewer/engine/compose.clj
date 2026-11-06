@@ -116,6 +116,8 @@
           :strokes strokes
           :tip tip
           :behind behind
+          :start-tip (first samples)
+          :start-behind (second samples)
           :draw-bounds bb)))))
 
 (defn- prepare-scene [scene]

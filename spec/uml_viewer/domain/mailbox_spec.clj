@@ -36,6 +36,11 @@
       (mailbox/write-command! f :display {:path "uml-viewer.edn"})
       (should= :display (:op (mailbox/take-command! f)))))
 
+  (it "treats a map without a queue or a command as an empty mailbox"
+    (let [f (io/file (tmp-root) "to-agent.edn")]
+      (spit f "{:nope 1}")
+      (should= {:next-id 1 :queue []} (mailbox/read-mailbox f))))
+
   (it "writes commands atomically with rising ids"
     (let [root (tmp-root)
           f (mailbox/to-agent root)

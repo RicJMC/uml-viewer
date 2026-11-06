@@ -21,7 +21,7 @@
    :hover nil
    :cam-x 0
    :cam-y 0
-   :path "examples/library.edn"
+   :path nil
    :mtime 0})
 
 (describe "card-scene"
@@ -82,7 +82,7 @@
                          {:id :engine :name "Engine" :ns "demo.engine"}]
                :edges []
                :order [:domain :engine]}
-          s {:doc doc :path "examples/library.edn" :focus [] :proposal-id :ccp
+          s {:doc doc :path nil :focus [] :proposal-id :ccp
              :proposal true :scene {:classes []} :cam-x 0 :cam-y 0 :selected nil}
           w 1500
           real (layout/real-diagram-rect w)
@@ -95,7 +95,7 @@
       (should-not (get-in off [:scene :diagram :proposal]))
       (should= s p-key)))
 
-  (it "hits the real diagram, proposal rows, New Proposal, and Declutter"
+  (it "hits the real diagram, proposal rows, New Proposal, Declutter, and Fit"
     (let [doc {:proposals [{:id :a :name "A" :layers []}
                            {:id :b :name "B" :layers []}]}
           s {:doc doc}
@@ -103,13 +103,16 @@
           real (layout/real-diagram-rect w)
           r0 (layout/proposal-row-rect w 0)
           nr (layout/new-proposal-rect w 2)
-          dr (layout/declutter-rect w 2)]
+          dr (layout/declutter-rect w 2)
+          fr (layout/fit-rect w 2)]
       (should= :real-diagram (:kind (events/inspector-hit s (geom/cx real) (geom/cy real) w)))
       (should (< (+ (:y real) (:h real)) layout/proposals-label-y))
       (should (< layout/proposals-label-y (:y r0)))
       (should= :a (:id (events/inspector-hit s (+ (:x r0) 2) (+ (:y r0) 2) w)))
       (should= :new-proposal (:kind (events/inspector-hit s (geom/cx nr) (geom/cy nr) w)))
       (should= :declutter (:kind (events/inspector-hit s (geom/cx dr) (geom/cy dr) w)))
+      (should= :fit (:kind (events/inspector-hit s (geom/cx fr) (geom/cy fr) w)))
+      (should (< (:y dr) (:y fr)))
       (should-be-nil (events/inspector-hit s 10 10 w))))
 
   (it "adds, renames, and deletes a proposal without touching the IR path"
@@ -227,6 +230,8 @@
   (it "reads wheel amount from a map and ignores junk"
     (let [s (assoc (state) :scene {:size {:h 4000 :w 800}})]
       (should= 96.0 (:cam-y (events/on-scroll s {:count 2} 900)))
+      (should= 96.0 (:cam-y (events/on-scroll s 2 {})))
+      (should= 0.0 (:cam-y (events/on-scroll s {} 900)))
       (should= 0.0 (:cam-y (events/on-scroll s :nope 900)))))
 
   (it "zooms 10% with ctrl+ and ctrl- and restores with ctrl+0"
@@ -269,7 +274,7 @@
                :classes [{:id :layout :name "Layout" :ns "uml-viewer.engine.layout"
                           :ops [{:name "place" :text "place"}]}]
                :edges []}
-          s {:doc doc :scene {:classes []} :path "examples/library.edn"}
+          s {:doc doc :scene {:classes []} :path nil}
           rows (detail/rows (detail/model (events/card-scene s) :layout))]
       (should (some #(= "place" (:op-name %)) rows))))
 
@@ -301,7 +306,7 @@
                :edges []}
           s {:doc doc
              :focus []
-             :path "examples/library.edn"
+             :path nil
              :scene (scene)
              :cam-x 10 :cam-y 10}
           opened (events/drill s :source)]
@@ -310,3 +315,66 @@
       (should= [] (:focus (events/on-key opened :esc)))
       (should= [] (:focus (events/back opened)))
       (should= s (events/back s)))))
+
+(describe "port navigation"
+  (it "jumps to the package when a port names no single class"
+    (let [doc {:hierarchical true
+               :title "Demo"
+               :classes [{:id :store.Node :ns "demo.store.Node"}]
+               :edges []}
+          s {:doc doc :focus [:app] :path nil :scene {:classes []}}
+          next (events/jump-to s :store)]
+      (should= [:store] (:focus next))
+      (should (:fit? next)))))
+
+(describe "inspector presses"
+  (it "switches proposal, adds one, cycles declutter, or ignores the hit"
+    (let [doc {:hierarchical true :title "T" :classes [] :edges [] :order []
+               :proposals [{:id :old :name "Old" :layers []}]}
+          s {:doc doc :path nil :focus [:x] :open-layer :z
+             :proposal true :proposal-id :old}
+          shown (events/on-inspector-press s {:kind :proposal :id :old})
+          added (events/on-inspector-press s {:kind :new-proposal})
+          cleared (events/on-inspector-press {:declutter :full} {:kind :declutter})]
+      (should= :old (:proposal-id shown))
+      (should (:proposal shown))
+      (should= [] (:focus shown))
+      (should-be-nil (:open-layer shown))
+      (should (:proposal-id added))
+      (should= 2 (count (get-in added [:doc :proposals])))
+      (should= :arrows (:declutter cleared))
+      (should= s (events/on-inspector-press s {:kind :nope}))
+      (should= s (events/on-inspector-press s nil))
+      (should (:fit? (events/on-inspector-press {:declutter :full} {:kind :fit}))))))
+
+(describe "fit"
+  (it "bounds a tall scene by height and keeps its centre in view"
+    (let [view-w 1220
+          view-h 920
+          r (events/fit-scene {:size {:w 2000 :h 2000 :min-x 0 :min-y 0}}
+                              view-w view-h)]
+      (should (< (:zoom r) 0.5))
+      (should (< (Math/abs (- 1000.0 (+ (:cam-x r) (/ view-w 2.0 (:zoom r))))) 1.0e-6))
+      (should (< (Math/abs (- 1000.0 (+ (:cam-y r) (/ view-h 2.0 (:zoom r))))) 1.0e-6))))
+
+  (it "caps automatic zoom so a tiny diagram does not fill the canvas"
+    (let [r (events/fit-scene {:size {:w 400 :h 300 :min-x 0 :min-y 0}} 1220 920)]
+      (should= events/fit-max-zoom (:zoom r))
+      (should (< (Math/abs (- 200.0 (+ (:cam-x r) (/ 1220.0 2.0 (:zoom r))))) 1.0e-6))))
+
+  (it "fits on F and records that the camera is automatic"
+    (let [s (assoc (state) :scene {:size {:w 4000 :h 4000}} :zoom 2.0)
+          next (events/on-key s :f {:window-w 1500 :window-h 900
+                                    :view-w 1220})]
+      (should-not (:fit? next))
+      (should (:autofit? next))
+      (should (< (:zoom next) 1.0)))))
+
+(describe "zoom key names"
+  (it "reads keyword, character, string, and other keys"
+    (should= :out (events/zoom-dir :minus {}))
+    (should= :in (events/zoom-dir \+ {}))
+    (should= :in (events/zoom-dir "=" {}))
+    (should= :reset (events/zoom-dir "0" {}))
+    (should-be-nil (events/zoom-dir 45 {}))
+    (should-be-nil (events/zoom-dir nil {}))))

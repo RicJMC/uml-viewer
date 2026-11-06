@@ -6,8 +6,8 @@
             [quil.core :as q]
             [uml-viewer.graph :as graph]
             [uml-viewer.source :as source]
-            [uml-viewer.python-language.graph-python :as python-graph]
-            [uml-viewer.python-language.source-python :as python-source]
+            [uml-viewer.python-language.graph-python-external :as python-graph]
+            [uml-viewer.python-language.source-python-external :as python-source]
             [uml-viewer.application.ir-generator :as generator]
             [uml-viewer.application.overlay :as overlay]
             [uml-viewer.domain.hierarchy :as hierarchy]
@@ -37,7 +37,7 @@
     (let [reader (python-source/create "examples/python/library" "library")
           found (source/member-source reader {:ns "library.book.Book" :name "borrow"})
           lines (str/split-lines (:body found))]
-      (should= :python (:lang found))
+      (should= :python-external (:lang found))
       (should (str/includes? (:file found) "book.py"))
       (should (str/includes? (nth lines (dec (:line found))) "def borrow(self)"))))
 

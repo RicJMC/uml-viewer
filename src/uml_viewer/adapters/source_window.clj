@@ -121,15 +121,24 @@
           (.scrollToReference editor "here"))))
     frame))
 
+(defn- show-member-window!
+  [title body line]
+  (SwingUtilities/invokeLater
+    (fn []
+      (build-frame! title body line nil))))
+
+(defn- source-for-member [source-impl ident]
+  (if (:lang ident) (:lang ident) source-impl))
+
 (defn open-member-window!
   "Open an independent source window for a member.
   `source-impl` satisfies `LanguageSource`. `ident` is a source identity
-  map, or `ns-name` plus `member-name`."
+  map, or `ns-name` plus `member-name`. The ident `:lang` selects its own
+  extractor, so one viewer serves a project with several languages."
   ([source-impl ident]
-   (when-let [{:keys [title body line lang]} (source/member-source source-impl ident)]
-     (SwingUtilities/invokeLater
-       (fn []
-         (build-frame! title body line lang)))
+   (when-let [{:keys [title body line]}
+              (source/member-source (source-for-member source-impl ident) ident)]
+     (show-member-window! title body line)
      true))
   ([source-impl ns-name member-name]
    (open-member-window! source-impl {:ns ns-name :name member-name})))

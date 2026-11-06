@@ -4,11 +4,22 @@
             [uml-viewer.adapters.core :as core]
             [uml-viewer.adapters.sketch :as sketch]
             [uml-viewer.application.ir-generator :as ir-generator]
+            [uml-viewer.application.overlay :as overlay]
             [uml-viewer.clojure-language.source-clojure :as clj-source]
+            [uml-viewer.cpp-language.source-cpp]
+            [uml-viewer.csharp-language.source-csharp]
             [uml-viewer.domain.log :as log]
-            [uml-viewer.languages.external :as external]
+            [uml-viewer.go-language.source-go]
+            [uml-viewer.java-language.source-java]
+            [uml-viewer.haskell-language.source-haskell]
+            [uml-viewer.kotlin-language.source-kotlin]
             [uml-viewer.main.ir-generator :as generator]
-            [uml-viewer.python-language.source-python :as python-source])
+            [uml-viewer.python-language.source-python]
+            [uml-viewer.python-language.source-python-external]
+            [uml-viewer.ruby-language.source-ruby]
+            [uml-viewer.rust-language.source-rust]
+            [uml-viewer.source :as source]
+            [uml-viewer.typescript-language.source-typescript])
   (:import (java.io File)
            (java.lang ProcessBuilder ProcessBuilder$Redirect))
   (:gen-class))
@@ -54,12 +65,16 @@
     (.put (.environment pb) foreground-env "1")
     (.start pb)))
 
+(defrecord DocumentSource [lang impl]
+  source/LanguageSource
+  (locate [_ ident] (source/locate impl ident))
+  (extract [_ text ident] (source/extract impl text ident))
+  (start-line [_ text ident] (source/start-line impl text ident))
+  (title [_ ident] (source/title impl ident)))
+
 (defn source-for [document]
-  (case (or (:lang document) :clojure)
-    :clojure clj-source/impl
-    :python (python-source/create (:source-root document) (:source-prefix document))
-    :typescript external/typescript-source
-    (throw (ex-info "Unsupported document language" {:lang (:lang document)}))))
+  (let [lang (keyword (or (:lang document) :clojure))]
+    (->DocumentSource lang (or (source/lookup lang) clj-source/impl))))
 
 (defn regenerate! [path]
   (let [document (edn/read-string (slurp path))
@@ -67,11 +82,25 @@
         policy (ir-generator/read-policy policy-path)]
     (ir-generator/generate (generator/graph-for policy) policy-path path)))
 
+(defn- await-web-url [path]
+  (let [f (io/file (overlay/metrics-root path) ".uml-viewer" "web.edn")]
+    (loop [n 0]
+      (when (< n 100)
+        (if (.isFile f)
+          (try
+            (:url (edn/read-string (slurp f)))
+            (catch Exception _ nil))
+          (do (Thread/sleep 100)
+              (recur (inc n))))))))
+
 (defn -main [& args]
-  (when (should-detach? args)
-    (let [p (detach! args)]
-      (println "UML viewer started (pid" (.pid p) "). Log:" log/log-name)
-      (System/exit 0)))
+  (let [options (core/parse-args args)]
+    (when (should-detach? args)
+      (let [p (detach! args)]
+        (println "UML viewer started (pid" (.pid p) "). Log:" log/log-name)
+        (when-let [u (and (:web? options) (await-web-url (:path options)))]
+          (println "Viewer at" u))
+        (System/exit 0))))
   (log/install-exception-log!)
   (let [options (core/parse-args args)
         document (when-not (:help? options)
@@ -82,4 +111,5 @@
     (when (:standalone? options)
       (swap! sketch/!bridge assoc :keep-agent true
              :regenerate #(regenerate! (:path options))))
-    (apply core/start! (if document (source-for document) clj-source/impl) args)))
+    (binding [core/*regenerate* regenerate!]
+      (apply core/start! (if document (source-for document) clj-source/impl) args))))
