@@ -80,7 +80,7 @@ not the generated EDN.
 | C# | `:csharp` | type | namespaces and `using` |
 | Ruby | `:ruby` | file | Zeitwerk, Rails, Grape, Rake |
 | Haskell | `:haskell` | module | layout-aware import scanner |
-| C++ | via `-M:cpp-ir` | namespace (view) / class | clang-uml JSON; metrics unavailable |
+| C++ | via `-M:cpp-ir` | namespace (view) / class | clang-uml JSON; coverage/CRAP opt-in via `-M:cpp-metrics`, no mutation |
 
 More than one language uses `:sources` (a vector of
 `{:lang :root :prefix?}`), not several policies. Java uses the package as

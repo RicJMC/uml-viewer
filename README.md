@@ -171,7 +171,19 @@ Clojure workflow remains available below.
 
 ## Run
 
-Needs Clojure CLI and Java 21+.
+Needs Clojure CLI and Java 21+. Everything else is optional and only needed
+for the feature that uses it:
+
+| Feature | Extra tooling |
+|---------|---------------|
+| Desktop window | a graphical display; the specs need `xvfb-run` without one |
+| Browser viewer (`--web`) | none: the JDK's `HttpServer`, no npm build |
+| Clojure, TS, Rust, Java, Go, Kotlin, C#, Ruby, Haskell scanners | none: they read text, and no language runtime is installed |
+| Python support | Python 3.9+, `pip install -e .`; `'.[quality]'` for measurements |
+| TypeScript coverage/mutation import | Node.js, for `analyzers/typescript` (`clj -M:metrics`) |
+| Go metrics | Go 1.25+, `go -C tools/go-metrics install .`, and `gremlins` for mutation |
+| C++ diagram | [clang-uml](https://clang-uml.github.io/) producing JSON |
+| C++ coverage | a build with `--coverage`, then `gcov --json-format` |
 
 From **this repo**:
 
@@ -201,8 +213,11 @@ The full control reference is [docs/CHEATSHEET.md](docs/CHEATSHEET.md).
 default; `--host 0.0.0.0` exposes it to the LAN for a phone or tablet, and
 `--no-open` skips the browser. A narrow window drops the inspector and keeps
 the **←** and **Fit** buttons, so boxes stay readable on a phone. The page
-has no authentication: expose it only on a trusted network. See
-[docs/web-viewer.md](docs/web-viewer.md).
+has no authentication and no TLS: anyone who can reach the port can read the
+diagram and the source of the classes it shows, and can post viewer events,
+including a local Regen. Keep the loopback default, and use
+`--host 0.0.0.0` only on a trusted LAN or behind a proxy that authenticates.
+See [docs/web-viewer.md](docs/web-viewer.md).
 
 From **any Clojure project** you want to view (no local uml-viewer checkout
 needed):
@@ -342,10 +357,11 @@ namespace is a `:dependency`. `requiring-resolve` of a quoted var is a
 `:stereotype :interface`. `defrecord` or `deftype` of a protocol is
 `:implements`. External `:require`s and `:import`s become **foreign**
 classes. The overlay fills Clojure members from `.metrics/`. TypeScript,
-Rust, Python, and Java are separate scanners (see
-[Language graphs](#language-graphs)): one class per module or source file,
-with exported members as `:ops`. The overlay joins each snapshot by `:ns`,
-then by the class id.
+Rust, Python, Java, Go, Kotlin, C#, Ruby, and Haskell are separate scanners
+(see [Language graphs](#language-graphs)): one class per module, file,
+package, or type, with exported members as `:ops`. C++ enters as clang-uml
+JSON through `-M:cpp-ir`. The overlay joins each snapshot by `:ns`, then by
+the class id.
 
 ### Do not invent layers (components)
 
@@ -788,8 +804,13 @@ inheritance, dependency, association, and aggregation relationships,
 overload identities, and exact source locations. See
 [C++ support](#c-support).
 
-CRAP and mutation for TypeScript, Rust, Python, Go, Java, Kotlin, and .NET
-come from separate tools. The overlay joins a snapshot to the class whose
+CRAP and mutation snapshots are produced outside the viewer. This repo ships
+importers for TypeScript (`clj -M:metrics coverage <istanbul.json> <policy.edn>`
+and `clj -M:metrics mutate <stryker.json> <policy.edn>`, which need Node.js),
+Python (the measurement CLI above), Go (`tools/go-metrics`), and C++
+(`clj -M:cpp-metrics`). Java, Kotlin, C#, Rust, Ruby, and Haskell need a
+producer that writes the same `.metrics/` rows. The overlay joins a snapshot
+to the class whose
 `:ns` equals that namespace. Otherwise the class id owns that name (`bookwriter.model`
 owns `model`), a dotted child rolls up (`pdf` owns `pdf.Layout`), and
 the policy prefix belongs to the single undotted Rust class. `::` is
@@ -837,7 +858,8 @@ clj -M:run diagram.edn
 Rows carry `:class` and the function's source line, so overloads do not
 collapse and metrics from one class do not leak into another. CRAP uses an
 **estimated** cyclomatic complexity (decision keywords plus `&&`, `||`, and
-`?:`) — useful for ranking, not a certified metric. See
+`?:`) — useful for ranking, not a certified metric. C++ mutation is not
+implemented, so the **M** dot stays unmeasured. See
 [docs/cpp-clang-uml.md](docs/cpp-clang-uml.md#coverage-and-crap).
 
 ## Go metrics

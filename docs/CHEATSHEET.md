@@ -73,8 +73,10 @@ The Inspector may say the session is not attached.
 ## How to read the diagram
 
 - **Color fill** combines the CRAP and mutation grades, red→green. Missing
-  CRAP or mutation data counts as red (grade 1), not unknown. A parent takes
-  the worst CRAP and worst mutation of its children.
+  CRAP or mutation data counts as red (grade 1), not unknown. A parent pools
+  CRAP over the functions underneath it (μ and σ, one weight per function)
+  and sums killed/survived for mutation. A child with no data adds one red
+  function to that pool; it does not replace the parent.
 - **C** and **M** dots in a box's upper-right are the two separate scores.
 - **Red arrows** are dependency-rule violations (inner/higher level pointing
   outward). Bold red when the current selection highlights the arrow.
