@@ -14,5 +14,8 @@ __pycache__/
 build/
 dist/
 .wave/
+# agent-workflow config; new files stay out (the legacy tracked rules file
+# predates this and remains as the repo has it)
+.grok/
 
 
