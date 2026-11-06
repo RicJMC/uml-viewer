@@ -12,12 +12,12 @@
             [uml-viewer.domain.log :as log]
             [uml-viewer.domain.mailbox :as mailbox])
   (:import [com.sun.net.httpserver HttpExchange HttpHandler HttpServer]
-           [java.io IOException OutputStream]
+           [java.io ByteArrayOutputStream IOException OutputStream]
            [java.net BindException Inet4Address InetAddress InetSocketAddress
             NetworkInterface URLDecoder]
            [java.nio.charset StandardCharsets]
-           [java.util.concurrent CountDownLatch Executors ScheduledExecutorService
-            TimeUnit]))
+           [java.util.concurrent CountDownLatch Executors ExecutorService
+            ScheduledExecutorService TimeUnit]))
 
 (def tick-ms 100)
 (def ping-ms 15000)
@@ -40,6 +40,80 @@
                     [(URLDecoder/decode k "UTF-8")
                      (URLDecoder/decode (or v "") "UTF-8")]))))
         (str/split (or body "") #"&")))
+
+(def ^:private max-event-body
+  "Bytes read from one POST /event; page events are small forms."
+  16384)
+
+(defn- strip-port
+  "Host header without its port: `127.0.0.1:20001` → `127.0.0.1`,
+  `[::1]:20001` → `::1`."
+  [h]
+  (if (str/starts-with? h "[")
+    (subs h 1 (or (str/index-of h "]") (count h)))
+    (first (str/split h #":"))))
+
+(defn- literal-address
+  "The IP literal `host`, parsed without any DNS lookup — a rebound domain
+  must never resolve here into loopback."
+  [host]
+  (when (or (re-matches #"\d{1,3}(\.\d{1,3}){3}" host) (str/includes? host ":"))
+    (try (InetAddress/getByName host) (catch Exception _ nil))))
+
+(defn- local-address?
+  "True when `a` is configured on this machine — the LAN address the page
+  may have been opened with when `--host` is not loopback."
+  [^InetAddress a]
+  (try
+    (let [want (.getHostAddress a)]
+      (some (fn [^NetworkInterface ni]
+              (when (.isUp ni)
+                (some #(= want (.getHostAddress ^InetAddress %))
+                      (enumeration-seq (.getInetAddresses ni)))))
+            (enumeration-seq (NetworkInterface/getNetworkInterfaces))))
+    (catch Exception _ nil)))
+
+(defn local-host?
+  "True when a Host/Origin header can only name this server: `localhost`,
+  a loopback literal, or an address of this machine. DNS names never pass,
+  so a rebound domain cannot reach the viewer."
+  [host]
+  (boolean
+   (when (seq host)
+     (let [h (str/lower-case (str/trim (strip-port (str/trim host))))]
+       (or (= "localhost" h)
+           (when-let [a (literal-address h)]
+             (or (.isLoopbackAddress a)
+                 (.isAnyLocalAddress a)
+                 (boolean (local-address? a)))))))))
+
+(defn same-origin-post?
+  "True when a POST may touch `/event`: the Host header must name this
+  machine, and the Origin header — which browsers send with every form POST —
+  must be this server's own origin when present. A foreign page (including
+  `Origin: null`, or another port on this machine) fails the Origin half; a
+  rebound DNS name fails the Host half; a direct client without either (curl)
+  passes on the Host check alone."
+  [host-header origin]
+  (let [h (some-> host-header str/trim str/lower-case)
+        o (some-> origin str/trim str/lower-case)]
+    (boolean (and (seq h)
+                  (local-host? h)
+                  (or (str/blank? o) (= o (str "http://" h)))))))
+
+(defn read-body
+  "At most `max` bytes of `in` as a UTF-8 string, or `::too-large` when the
+  body overflows — capped while reading, so a lying Content-Length cannot
+  make the JVM slurp an unbounded body."
+  [in max]
+  (let [buf (byte-array 1024)
+        out (ByteArrayOutputStream.)]
+    (loop []
+      (let [n (.read ^java.io.InputStream in buf)]
+        (cond
+          (neg? n) (String. (.toByteArray out) StandardCharsets/UTF_8)
+          (> (+ (.size out) n) max) ::too-large
+          :else (do (.write out buf 0 n) (recur)))))))
 
 (defn sse-message
   "One server-sent event named `event` carrying `data`."
@@ -87,11 +161,18 @@
   (System/exit 0))
 
 (defn stop!
-  "Stop the HTTP server and its periodic tasks. Used by tests; normal
-  shutdown goes through `quit!`."
+  "Stop the HTTP server, its thread pool, and its periodic tasks; release
+  open SSE pages. Used by tests; normal shutdown goes through `quit!`. The
+  shared single-thread `worker` keeps its (now idle) thread — the specs
+  reuse this defonce JVM, and `quit!` ends it with the process."
   []
+  (doseq [{:keys [done]} (:clients @!runtime)]
+    (.countDown ^CountDownLatch done))
   (when-let [^HttpServer server (:server @!runtime)]
     (.stop server 0)
+    (when-let [pool (.getExecutor server)]
+      (when (instance? ExecutorService pool)
+        (.shutdownNow ^ExecutorService pool)))
     (swap! !runtime assoc :server nil))
   (doseq [task @!tasks] (.cancel ^java.util.concurrent.Future task false))
   (reset! !tasks [])
@@ -167,13 +248,16 @@
     (.close ex)))
 
 (defn- event! [^HttpExchange ex]
-  (let [params (parse-form (slurp (.getRequestBody ex) :encoding "UTF-8"))]
-    (if (= "quit" (get params "type"))
-      (do (text! ex 200 "application/json" "{}")
-          (quit!))
-      (let [ctx (:ctx @!runtime)
-            reply (step! #(viewer/handle % ctx params))]
-        (text! ex 200 "application/json" (markup/json (or reply {})))))))
+  (let [body (read-body (.getRequestBody ex) max-event-body)]
+    (if (= ::too-large body)
+      (text! ex 413 "text/plain" "body too large")
+      (let [params (parse-form body)]
+        (if (= "quit" (get params "type"))
+          (do (text! ex 200 "application/json" "{}")
+              (quit!))
+          (let [ctx (:ctx @!runtime)
+                reply (step! #(viewer/handle % ctx params))]
+            (text! ex 200 "application/json" (markup/json (or reply {})))))))))
 
 (defn- route! [^HttpExchange ex]
   (let [path (.getPath (.getRequestURI ex))
@@ -182,7 +266,11 @@
       (cond
         (and (= "GET" method) (assets path)) (asset! ex (assets path))
         (and (= "GET" method) (= "/events" path)) (events! ex)
-        (and (= "POST" method) (= "/event" path)) (event! ex)
+        (and (= "POST" method) (= "/event" path))
+        (if (same-origin-post? (.getFirst (.getRequestHeaders ex) "Host")
+                               (.getFirst (.getRequestHeaders ex) "Origin"))
+          (event! ex)
+          (text! ex 403 "text/plain" "forbidden"))
         (and (= "GET" method) (= "/health" path))
         (text! ex 200 "text/plain" "ok")
         :else (text! ex 404 "text/plain" "not found"))

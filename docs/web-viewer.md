@@ -84,9 +84,14 @@ an iframe with the whole file and the requested line highlighted.
 There is no authentication and no TLS. The default bind is loopback. When you
 pass `--host 0.0.0.0`, anyone who can reach the port can read the diagram and
 source files, and can post viewer events. Use it on a trusted LAN only, or put
-it behind a reverse proxy with auth. The page refuses cross-origin posts by
-default (the browser's same-origin policy; the server does not add CORS
-headers).
+it behind a reverse proxy with auth.
+
+`POST /event` is enforced by the server, not just by the browser: the `Host`
+header must be `localhost`, a loopback literal, or an address of this machine
+(a DNS name never passes, so a rebound domain cannot reach the viewer), and
+the `Origin` header, when the browser sends one, must be this server's own
+origin. A foreign page — or another port on the same machine — gets `403`, and
+a body larger than 16 KB gets `413`. The server sends no CORS headers.
 
 ## Architecture
 
