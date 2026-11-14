@@ -1,67 +1,83 @@
 (ns uml-viewer.go-language.source-go
-  "Go LanguageSource. A class is a package, so a member may live in any
-  non-test file of the package directory; `locate` finds the one that
-  declares it. `Type.Method` names a method on that receiver type."
+  "Go LanguageSource: find a func, method, or type in any file of the
+  package. On a type class the method with that receiver wins. Without a
+  receiver from `ns-name`, a dotted member name is a `Type.Method` pair."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [uml-viewer.source :as source])
   (:import [java.util.regex Pattern]))
 
-(def ^:private plain-fmts
-  ["(?m)^func\\s+%s\\s*[\\[(]"
-   "(?m)^type\\s+%s\\b"
-   "(?m)^\\s+%s\\s+(?:=\\s*)?(?:interface|struct|func|\\S)"
-   "(?m)^(?:var|const)\\s+%s\\b"])
+(defn- receiver
+  "Type named after the last `.` of the import path's last segment, or nil."
+  [ns-name]
+  (let [seg (last (str/split (str ns-name) #"/"))]
+    (when (str/includes? seg ".")
+      (subs seg (inc (str/last-index-of seg "."))))))
 
-(defn- method-pattern [member-name]
-  (let [[recv method] (str/split (str member-name) #"\." 2)]
-    (when (and recv method)
-      (re-pattern (str "(?m)^func\\s*\\([^)]*\\b" (Pattern/quote recv)
-                       "(?:\\[[^\\]]*\\])?\\s*\\)\\s*" (Pattern/quote method) "\\s*[\\[(]")))))
+(defn- find-at [text pattern from]
+  (let [m (.matcher (Pattern/compile pattern) text)]
+    (when (.find m from) (.start m))))
 
-(defn- start-of [text member-name]
-  (when (and text member-name)
-    (if-let [p (method-pattern member-name)]
-      (let [m (re-matcher p text)]
-        (when (.find m) (.start m)))
-      (source/pattern-start text member-name plain-fmts))))
+(defn- interface-spec [text recv q]
+  (when-let [at (find-at text (format "(?m)^type\\s+%s(?:\\[[^\\]]*\\])?\\s+interface\\b" recv) 0)]
+    (find-at text (format "(?m)^\\s+%s\\s*\\(" q) at)))
 
-(defn member-line
-  "1-based line of `member-name` in `text`, or nil."
-  [text member-name]
-  (when-let [start (start-of text member-name)]
-    (source/line-number text start)))
+(defn- member-parts
+  "Quoted method name and quoted receiver pattern from `ns-name` and
+  `member-name`. The receiver from `ns-name` wins; without one, a dotted
+  member is `Type.Method` and its last segment is the name."
+  [ns-name member-name]
+  (let [member (str member-name)
+        recv-from-ns (some-> (receiver ns-name) Pattern/quote)
+        dotted (str/includes? member ".")]
+    (if recv-from-ns
+      [(Pattern/quote member) recv-from-ns]
+      (if dotted
+        (let [[prefix last-seg] (str/split member #"\." 2)]
+          [(Pattern/quote last-seg) (Pattern/quote prefix)])
+        [(Pattern/quote member) nil]))))
 
-(defn extract-member
-  "Declaration line of `member-name`, or nil."
-  [text member-name]
-  (when-let [start (start-of text member-name)]
-    (source/declaration-line text start)))
+(defn member-start
+  "Index of the declaration of `member-name` in `text`, or nil.
+  A method on the receiver from `ns-name` wins over other declarations."
+  [text ns-name member-name]
+  (when (and text (seq (str member-name)))
+    (let [[q recv] (member-parts ns-name member-name)]
+      (or (when recv
+            (or (find-at text (format "(?m)^func\\s*\\([^)]*?\\b%s\\b[^)]*\\)\\s*%s\\s*\\(" recv q) 0)
+                (interface-spec text recv q)))
+          (find-at text (format "(?m)^func\\s+%s\\b" q) 0)
+          (find-at text (format "(?m)^(?:type\\s+|[ \\t]+)%s\\b(?:\\[[^\\]]*\\])?\\s+(?:=\\s*)?[^=\\s]" q) 0)
+          (find-at text (format "(?m)^func\\s*\\([^)]*\\)\\s*%s\\s*\\(" q) 0)
+          (find-at text (format "(?m)^(?:var|const)\\s+%s\\b" q) 0)))))
 
 (defn- package-files [file]
-  (let [dir (.getParentFile (.getCanonicalFile (io/file file)))]
-    (->> (.listFiles dir)
-         (filter #(let [n (.getName ^java.io.File %)]
-                    (and (str/ends-with? n ".go") (not (str/ends-with? n "_test.go")))))
-         (sort-by #(.getName ^java.io.File %)))))
+  (let [f (io/file file)
+        siblings (->> (.listFiles (.getParentFile (.getAbsoluteFile f)))
+                      (filter #(str/ends-with? (.getName %) ".go"))
+                      (remove #(str/ends-with? (.getName %) "_test.go"))
+                      (sort-by #(.getName %)))]
+    (cons f (remove #(= (.getName %) (.getName f)) siblings))))
 
-(defn locate-member
-  "Path of the package file that declares `(:name ident)`; the class file
-  when no name is given or none declares it; nil when `:file` is missing."
-  [ident]
-  (when-let [f (source/existing-file ident)]
-    (if-let [nm (not-empty (str (:name ident)))]
-      (or (some (fn [g] (when (start-of (slurp g) nm)
-                          (str/replace (.getPath ^java.io.File g) #"\\" "/")))
-                (package-files f))
-          f)
-      f)))
+(defn- declaring-file [ident path]
+  (some (fn [f]
+          (when (member-start (slurp f) (:ns ident) (:name ident))
+            (str/replace (.getPath f) #"\\" "/")))
+        (package-files path)))
 
 (def impl
   (reify source/LanguageSource
-    (locate [_ ident] (locate-member ident))
-    (extract [_ text ident] (extract-member text (:name ident)))
-    (start-line [_ text ident] (member-line text (:name ident)))
+    (locate [_ ident]
+      (when-let [path (source/existing-file ident)]
+        (if (seq (str (:name ident)))
+          (declaring-file ident path)
+          path)))
+    (extract [_ text ident]
+      (when-let [start (member-start text (:ns ident) (:name ident))]
+        (source/declaration-line text start)))
+    (start-line [_ text ident]
+      (when-let [start (member-start text (:ns ident) (:name ident))]
+        (source/line-number text start)))
     (title [_ ident] (source/file-title ident))))
 
 (source/register! :go impl)

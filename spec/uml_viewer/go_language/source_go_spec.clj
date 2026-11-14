@@ -1,38 +1,101 @@
 (ns uml-viewer.go-language.source-go-spec
   (:require [clojure.java.io :as io]
+            [clojure.string :as str]
             [speclj.core :refer :all]
-            [uml-viewer.go-language.source-go :as go-source]
+            [uml-viewer.go-language.source-go]
             [uml-viewer.source :as source]))
 
-(def text
-  (str "package order\n\n"
-       "type Service struct{}\n\n"
-       "type (\n\tID int\n)\n\n"
-       "func New() *Service { return nil }\n\n"
-       "func (s *Service) Place(id ID) error {\n\treturn nil\n}\n"))
+(defn- package-dir []
+  (let [dir (io/file (System/getProperty "java.io.tmpdir") (str "uml-go-src-" (System/nanoTime)))]
+    (io/make-parents (io/file dir "x"))
+    (spit (io/file dir "cart.go")
+          (str "package cart\n\n"
+               "type Totaler interface {\n\tTotal() int\n}\n\n"
+               "type Cart struct{ n int }\n\n"
+               "func New() *Cart { return &Cart{} }\n"))
+    (spit (io/file dir "total.go")
+          (str "package cart\n\n"
+               "type Bill struct{}\n\n"
+               "func (b Bill) Total() int { return 1 }\n\n"
+               "func (c *Cart) Total() int { return c.n }\n"))
+    (spit (io/file dir "total_test.go") "package cart\n\nfunc Total() {}\n")
+    dir))
 
-(describe "go member lookup"
-  (it "finds functions, types, grouped types, and methods by line"
-    (should= 3 (go-source/member-line text "Service"))
-    (should= 6 (go-source/member-line text "ID"))
-    (should= 9 (go-source/member-line text "New"))
-    (should= 11 (go-source/member-line text "Service.Place"))
-    (should-be-nil (go-source/member-line text "Missing")))
+(defn- find-member [dir ns-name member]
+  (source/member-source {:lang :go
+                         :ns ns-name
+                         :file (.getPath (io/file dir "cart.go"))
+                         :name member}))
 
-  (it "extracts the declaration line"
-    (should= "func (s *Service) Place(id ID) error {"
-             (go-source/extract-member text "Service.Place"))))
+(describe "go extractor"
+  (it "opens the file of the package that declares the method on that receiver"
+    (let [dir (package-dir)
+          found (find-member dir "example.com/shop/cart.Cart" "Total")]
+      (should= :go (:lang found))
+      (should= (.getPath (io/file dir "total.go")) (:file found))
+      (should= 7 (:line found))))
 
-(describe "go member files"
-  (it "opens the package file that declares the member"
-    (let [dir (doto (io/file (System/getProperty "java.io.tmpdir") (str "uml-go-src-" (System/nanoTime)))
-                (.mkdirs))
-          a (io/file dir "a.go")
-          b (io/file dir "b.go")]
-      (spit a "package order\n\nfunc New() {}\n")
-      (spit b "package order\n\nfunc Other() {}\n")
-      (spit (io/file dir "b_test.go") "package order\n\nfunc TestOther() {}\n")
-      (let [found (source/member-source :go {:file (.getPath a) :name "Other" :lang :go})]
-        (should (.endsWith (str (:file found)) "b.go"))
-        (should= 3 (:line found)))
-      (should-be-nil (source/member-source :go {:file (.getPath a) :name "TestOther" :lang :go})))))
+  (it "finds an interface method in the interface, not in an implementation"
+    (let [found (find-member (package-dir) "example.com/shop/cart.Totaler" "Total")]
+      (should= 4 (:line found))
+      (should (re-find #"cart\.go:4$" (:title found)))))
+
+  (it "finds a package function, even when the module path has a dot"
+    (let [dir (package-dir)]
+      (should= 9 (:line (find-member dir "example.com/shop/cart" "New")))
+      (should= 9 (:line (find-member dir "gopkg.in/cart.v3" "New")))))
+
+  (it "finds a method of a generic interface"
+    (let [dir (package-dir)]
+      (spit (io/file dir "box.go")
+            "package cart\n\ntype Box[T any] interface {\n\tPut(v T)\n}\n")
+      (should= 4 (:line (source/member-source {:lang :go
+                                                :ns "example.com/shop/cart.Box"
+                                                :file (.getPath (io/file dir "box.go"))
+                                                :name "Put"})))))
+
+  (it "opens a root-package file named relative to the working directory"
+    (let [file (io/file (str "uml-go-root-" (System/nanoTime) ".go"))]
+      (try
+        (spit file "package root\n\nfunc Run() {}\n")
+        (should= 3 (:line (source/member-source {:lang :go :ns "example.com/root"
+                                                  :file (.getPath file) :name "Run"})))
+        (finally (.delete file)))))
+
+  (it "finds a type declaration"
+    (should= 7 (:line (find-member (package-dir) "example.com/shop/cart" "Cart"))))
+
+  (it "finds a var and a const declaration"
+    (let [dir (package-dir)]
+      (spit (io/file dir "defs.go")
+            "package cart\n\nconst MaxQty = 5\n\nvar Limit int = 9\n")
+      (should= 3 (:line (find-member dir "example.com/shop/cart" "MaxQty")))
+      (should= 5 (:line (find-member dir "example.com/shop/cart" "Limit")))))
+
+  (it "finds a member of a grouped type block indented with spaces"
+    (let [dir (package-dir)]
+      (spit (io/file dir "ids.go")
+            "package cart\n\ntype (\n    ID int\n)\n")
+      (should= 4 (:line (find-member dir "example.com/shop/cart" "ID")))))
+
+  (it "finds a method by its Type.Method name when :ns names no receiver"
+    (let [dir (package-dir)
+          found (find-member dir "" "Cart.Total")]
+      (should= (.getPath (io/file dir "total.go")) (:file found))
+      (should= 7 (:line found))))
+
+  (it "points the body line at the receiver method, not the interface or other impls"
+    (let [found (find-member (package-dir) "example.com/shop/cart.Cart" "Total")]
+      (should= "func (c *Cart) Total() int { return c.n }"
+               (nth (str/split-lines (str (:body found))) (dec (:line found))))))
+
+  (it "returns nil when no file of the package declares the member"
+    (should-be-nil (find-member (package-dir) "example.com/shop/cart" "Missing")))
+
+  (it "opens the package file at the top when no member is named"
+    (let [dir (package-dir)
+          found (source/member-source {:lang :go
+                                       :ns "example.com/shop/cart"
+                                       :file (.getPath (io/file dir "cart.go"))})]
+      (should= (.getPath (io/file dir "cart.go")) (:file found))
+      (should-be-nil (:line found)))))

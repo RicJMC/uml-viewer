@@ -102,13 +102,14 @@
 
 (defn class-namespace
   "Snapshot namespace for a class: authored or generated `:ns`,
-  normalized to dots so C++ `app::detail` and PHP `App\\Foo` join their
-  snapshots."
+  normalized to dots so C++ `app::detail`, PHP `App\\Foo`, and a Go
+  import path join their snapshots."
   [c]
   (when-let [ns-name (:ns c)]
     (-> (str ns-name)
         (str/replace "::" ".")
-        (str/replace "\\" "."))))
+        (str/replace "\\" ".")
+        (str/replace #"/" "."))))
 
 (defn- normalize-ns
   "Crapper separates Rust with `::`, names a Go package by its import path

@@ -13,12 +13,15 @@
   [:main.uml-viewer :rust-language.source-rust] :association,
   [:application.document :engine.compose] :association,
   [:main.uml-viewer :typescript-language.source-typescript] :association,
+  [:main.ir-generator :go-language.graph-go] :association,
   [:main :python-language] :association,
   [:engine.compose :engine.layout] :association,
   [:engine.compose :engine.route] :association,
   [:main.ir-generator :rust-language.graph-rust] :association,
   [:adapters.core :adapters.sketch] :association,
+  [:main.uml-viewer :go-language.source-go] :association,
   [:main :application] :association,
+  [:main :go-language] :association,
   [:main.uml-viewer :clojure-language.source-clojure] :association,
   [:main.uml-viewer :java-language.source-java] :association,
   [:main :clojure-language] :association,
@@ -258,7 +261,9 @@
   {:from :cpp-language.source-cpp, :to :source, :kind :implements}
   {:from :application.document, :to :domain.mailbox, :kind :dependency}
   {:from :engine.route, :to :domain.geom, :kind :dependency}
+  {:from :go-language.graph-go, :to :go-language.read-go, :kind :dependency}
   {:from :adapters.svg, :to :domain.config, :kind :dependency}
+  {:from :go-language.read-go, :to :graph, :kind :dependency}
   {:from :adapters.svg, :to :engine.curve, :kind :dependency}
   {:from :adapters.source-window, :to :javax.swing, :kind :dependency}
   {:from :adapters.sketch, :to :javax.swing, :kind :dependency}],
@@ -508,6 +513,13 @@
    :level 0,
    :lang :clojure,
    :id :go-language.graph-go}
+  {:stereotype nil,
+   :ns "uml-viewer.go-language.read-go",
+   :name "ReadGo",
+   :file "src/uml_viewer/go_language/read_go.clj",
+   :level 0,
+   :lang :clojure,
+   :id :go-language.read-go}
   {:stereotype nil,
    :ns "uml-viewer.go-language.source-go",
    :name "SourceGo",
