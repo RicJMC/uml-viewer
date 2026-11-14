@@ -321,6 +321,106 @@ example.com/shop/internal/team/team.go:10.25,10.37 1 1
 	}
 }
 
+func TestRunWritesOneRowPerFunctionAcrossPackageAndTypes(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example.com/shop\n\ngo 1.22\n")
+	write(t, root, "internal/team/team.go", `package team
+
+type Team struct{}
+
+func Rule(n int) bool {
+	if n > 1 {
+		return true
+	}
+	return false
+}
+
+func (t Team) Score(n int) int { return n * 2 }
+
+func (t *Team) reset() {}
+`)
+	write(t, root, "cover.out", `mode: set
+example.com/shop/internal/team/team.go:5.23,6.11 1 1
+example.com/shop/internal/team/team.go:6.11,8.3 1 0
+example.com/shop/internal/team/team.go:9.2,9.14 1 1
+example.com/shop/internal/team/team.go:11.38,11.46 1 1
+example.com/shop/internal/team/team.go:13.25,13.37 1 1
+`)
+	ir := writeIR(t, root, `{:classes [
+	  {:ns "example.com/shop/internal/team" :name "team" :lang :go :file "internal/team/team.go"}
+	  {:ns "example.com/shop/internal/team.Team" :name "Team" :lang :go :file "internal/team/team.go"}
+	  {:ns "example.com/shop/internal/team.Note" :name "Note" :lang :go :file "internal/team/team.go"}
+	  {:ns "example.com/shop/internal/team.Scorer" :name "Scorer" :lang :go :file "internal/team/team.go"}]}`)
+	out := filepath.Join(root, "out")
+
+	var stdout bytes.Buffer
+	if err := run([]string{"-root", root, "-ir", ir, "-cover", filepath.Join(root, "cover.out"), "-out", out}, &stdout, &bytes.Buffer{}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "(3 Go functions") {
+		t.Errorf("want three functions, got %q", stdout.String())
+	}
+	crap, err := os.ReadFile(filepath.Join(out, "crap.edn"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`{:name "Rule", :namespace "example.com/shop/internal/team"`,
+		`{:name "Score", :namespace "example.com/shop/internal/team.Team"`,
+		`{:name "reset", :namespace "example.com/shop/internal/team.Team", :complexity 1, :coverage 100.0, :crap 1.0, :private true`,
+	} {
+		if !strings.Contains(string(crap), want) {
+			t.Errorf("crap.edn lacks %s\n%s", want, crap)
+		}
+	}
+	for _, absent := range []string{"Team.Score", "team.Note", "team.Scorer"} {
+		if strings.Contains(string(crap), absent) {
+			t.Errorf("crap.edn should not contain %s:\n%s", absent, crap)
+		}
+	}
+	if n := strings.Count(string(crap), `:tool "go-metrics"`); n != 3 {
+		t.Errorf("got %d rows, want 3", n)
+	}
+}
+
+func TestMutationWritesPackageAndTypeViews(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example.com/shop\n")
+	write(t, root, "internal/team/team.go", `package team
+
+func PackageRule() {}
+
+type Team struct{}
+
+func (t Team) Score() int { return 1 }
+`)
+	write(t, root, "gremlins.json", `{"files":[]}`)
+	ir := writeIR(t, root, `{:classes [
+	  {:ns "example.com/shop/internal/team" :name "team" :lang :go :file "internal/team/team.go"}
+	  {:ns "example.com/shop/internal/team.Team" :name "Team" :lang :go :file "internal/team/team.go"}]}`)
+	out := filepath.Join(root, "out")
+	if err := run([]string{"-root", root, "-ir", ir,
+		"-mutation", "internal/team=" + filepath.Join(root, "gremlins.json"),
+		"-out", out}, &bytes.Buffer{}, &bytes.Buffer{}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := os.ReadFile(filepath.Join(out, "mutate", "example.com.shop.internal.team.edn"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(pkg), "Score") || !strings.Contains(string(pkg), "PackageRule") {
+		t.Errorf("package snapshot should hold only package functions:\n%s", pkg)
+	}
+	typ, err := os.ReadFile(filepath.Join(out, "mutate", "example.com.shop.internal.team.Team.edn"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(typ), `:namespace "example.com/shop/internal/team.Team"`) ||
+		!strings.Contains(string(typ), `:id "defn/Score"`) {
+		t.Errorf("type snapshot lacks the bare method:\n%s", typ)
+	}
+}
+
 func TestRunRefusesWithoutInputs(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "go.mod", "module m\n")

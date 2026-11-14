@@ -22,15 +22,16 @@ type CrapEntry struct {
 	Private    bool
 }
 
-// CrapEntries scores every function, worst first, as crap4clj orders them.
+// CrapEntries scores every function once, worst first, as crap4clj orders
+// them. Methods go under import/path.Type with their bare name.
 func CrapEntries(pkgs []Package, profile *Profile) []CrapEntry {
 	var entries []CrapEntry
 	for _, pkg := range pkgs {
 		for _, f := range pkg.Funcs {
 			cov := profile.Coverage(f.ImportFile, f)
 			entries = append(entries, CrapEntry{
-				Name:       f.Name,
-				Namespace:  pkg.Namespace,
+				Name:       f.MetricsName(),
+				Namespace:  f.MetricsNamespace(pkg.Namespace),
 				Complexity: f.Complexity,
 				Coverage:   cov,
 				CRAP:       CRAP(f.Complexity, cov),
@@ -64,16 +65,24 @@ func CrapEDN(kept []Map, entries []CrapEntry) string {
 // form, so one gremlins never touched reads as "no mutation sites" rather than
 // as missing data.
 func MutateEDN(pkg Package, tallies map[string]Tally, now time.Time) string {
+	return MutateEDNFor(pkg, pkg.Namespace, pkg.Funcs, tallies, now,
+		func(f Func) string { return f.Name })
+}
+
+// MutateEDNFor writes a snapshot for one namespace and one view of the
+// functions. A type view passes a bare method name; the package view passes
+// Type.Method. Tallies are still keyed by Func.Name (Type.Method).
+func MutateEDNFor(pkg Package, namespace string, funcs []Func, tallies map[string]Tally, now time.Time, display func(Func) string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "{:tool \"gremlins\"\n :namespace %s\n :source %s\n :tested-at %s\n :forms\n [",
-		ednString(pkg.Namespace), ednString(pkg.Dir), ednString(now.Format(time.RFC3339)))
-	for i, f := range pkg.Funcs {
+		ednString(namespace), ednString(pkg.Dir), ednString(now.Format(time.RFC3339)))
+	for i, f := range funcs {
 		if i > 0 {
 			b.WriteString("\n  ")
 		}
 		t := tallies[f.Name]
 		fmt.Fprintf(&b, "{:id %s, :killed %d, :survived %d, :uncovered %d, :sites %d}",
-			ednString(formID(f)), t.Killed, t.Survived, t.Uncovered, t.Sites())
+			ednString(formID(display(f), f.Private)), t.Killed, t.Survived, t.Uncovered, t.Sites())
 	}
 	b.WriteString("]}\n")
 	return b.String()
@@ -81,11 +90,11 @@ func MutateEDN(pkg Package, tallies map[string]Tally, now time.Time) string {
 
 // formID uses clj-mutate's defn/ and defn-/ prefixes, which the overlay reads
 // as public and private.
-func formID(f Func) string {
-	if f.Private {
-		return "defn-/" + f.Name
+func formID(name string, private bool) string {
+	if private {
+		return "defn-/" + name
 	}
-	return "defn/" + f.Name
+	return "defn/" + name
 }
 
 func ednString(s string) string {

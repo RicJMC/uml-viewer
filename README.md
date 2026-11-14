@@ -773,8 +773,8 @@ from the nearest `go.mod` (`github.com/unclebob/crap4go/internal/crap`),
 or the `package` name when there is no `go.mod`. A type's `:ns` is
 `import/path.Type`. Those are the namespaces crapper and mutator write,
 so `.metrics` snapshots join by `:ns`. It skips `*_test.go`, files with
-`//go:build ignore`, and directories named `vendor`, `testdata`, or
-`node_modules`, or starting with `.` or `_`. Each `import` is a package
+`//go:build ignore`, and directories named `vendor`, `testdata`, `target`,
+`tmp`, or `node_modules`, or starting with `.` or `_`. Each `import` is a package
 `:dependency`; an import outside the project is foreign. A type depends
 on the project types and packages that its declaration and its methods
 name (`store.Item`, or a bare `Item` from its own package). A type whose
@@ -785,7 +785,9 @@ interface that embeds an interface outside the project, or lists type
 constraints (`~int | ~float64`), is not matched. An interface that
 embeds a project interface is `:inheritance`. Interfaces are
 `:stereotype :interface`. Exported package functions, exported methods,
-and interface methods are `:ops`.
+and interface methods are `:ops`. Single-method interfaces are matched like
+any other interface; a type only links when its method set covers every
+method, so `Error`/`String` do not link unrelated packages by themselves.
 
 `merge-scans` links a TypeScript `invoke("read_text")` to the Rust class
 that owns `#[tauri::command] fn read_text`, as a `:dependency`. Two
@@ -915,9 +917,15 @@ implemented, so the **M** dot stays unmeasured. See
 [gremlins](https://github.com/go-gremlins/gremlins) reports into the same
 `.metrics/crap.edn` and `.metrics/mutate/<namespace>.edn` snapshots the
 overlay reads. It takes package names from the generated IR, so it agrees
-with the Go scanner about what a package is. Methods are `Type.Method`;
-unexported names stay private. A repeated name such as one `init` per file
-becomes `init (file.go:12)` and opens that one.
+with the Go scanner about what a package is. It writes **one row per
+function**, matching crapper's Go table: a package function uses the package
+import path and the function name; a method uses `import/path.Type` and the
+bare method name. The overlay rolls a type's rows into its package class as
+`Type.Method`, so the package card keeps the qualified names while the type
+card joins the bare names. Unexported names stay private. A repeated name
+such as one `init` per file becomes `init (file.go:12)` and opens that one.
+A snapshot filename flattens the import path's slashes; its `:namespace`
+stays the import path.
 
 ```bash
 go -C tools/go-metrics install .
@@ -929,13 +937,6 @@ go-metrics -ir examples/shop.edn -cover cover.out -mutation internal/team=/tmp/t
 
 Rows written by another language's tool are kept; go-metrics replaces only
 its own rows (`:tool "go-metrics"`).
-
-The Go scanner now also links interface implementations and cross-package
-embedding: a package whose type has every method of a two-or-more-method interface
-implements that package, and an embedded `other.Type` adds an inheritance
-edge. Single-method interfaces are ignored so `Error`/`String` do not link
-unrelated packages. The work follows `Conte777`'s fork, adapted to the
-package-level class model.
 
 ## IR
 
@@ -1060,11 +1061,13 @@ extractor must satisfy `LanguageSource`:
 **Rust** (`uml-viewer.rust-language.source-rust`), and **Python**
 (`uml-viewer.python-language.source-python`) open `:file` and find the
 exported declaration, the `fn`, or the `def`. **Go**
-(`uml-viewer.go-language.source-go`) searches every non-test `.go` file
-in the directory of `:file`, because a Go package spans files. On a type
-class it prefers the method with that receiver (`func (c *Cart) Total`),
-then the method in that interface, then a `func`, a `type`, or any
-method of that name. The class card passes
+(`uml-viewer.go-language.source-go`) searches every `.go` file in the
+directory that is not a test and not `//go:build ignore`, because a Go
+package spans files. On a type class it prefers the method with that
+receiver (`func (c *Cart) Total`), then the method in that interface, then
+a `func`, a `type`, or any method of that name. It also accepts
+`Type.Method` when `:ns` already names the receiver, and
+`init (file.go:12)` selects that specific init. The class card passes
 `:lang` and `:file` from the class. A class with no `:lang` still uses
 the Clojure extractor that Main passes in. The protocol is the seam; do
 not special-case languages in the class card.

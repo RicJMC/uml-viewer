@@ -5,7 +5,8 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [uml-viewer.go-language.read-go :as read-go]
-            [uml-viewer.graph :as graph]))
+            [uml-viewer.graph :as graph])
+  (:import [java.util.regex Pattern]))
 
 ;; ---------------------------------------------------------------- files and packages
 
@@ -154,10 +155,33 @@
 (defn- file-of [pkg file]
   (some #(when (= file (:file %)) %) (:files pkg)))
 
+(defn- blank-first
+  "Blank the first whole-word `word` in `text`, keeping the rest of the
+  declaration for type references."
+  [text word]
+  (let [re (re-pattern (str "\\b" (Pattern/quote (str word)) "\\b"))
+        m (re-matcher re text)]
+    (if (.find m)
+      (str (subs text 0 (.start m))
+           (apply str (repeat (- (.end m) (.start m)) \space))
+           (subs text (.end m)))
+      text)))
+
+(defn- type-ref-text
+  "Type declaration without its own name or interface method names. A
+  method/spec called `Label` must not resolve to a project type `Label`."
+  [t]
+  (if (= :interface (:kind t))
+    (reduce #(blank-first %1 (:name %2)) (:text t) (:specs t))
+    (:text t)))
+
 (defn- type-refs
   "Project ids `t` names in its declaration and its methods."
   [project pkg t]
-  (->> (cons {:text (:text t) :file (:file t)} (:methods t))
+  (->> (cons {:text (type-ref-text t) :file (:file t)}
+             (map (fn [m] {:text (blank-first (:text m) (:name m))
+                           :file (:file m)})
+                  (:methods t)))
        (mapcat (fn [{:keys [text file]}]
                  (let [aliases (alias-map (file-of pkg file) (:by-path project))]
                    (keep #(:id (resolve-name project pkg aliases %)) (refs-in text)))))

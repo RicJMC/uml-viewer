@@ -22,48 +22,81 @@
   (when-let [at (find-at text (format "(?m)^type\\s+%s(?:\\[[^\\]]*\\])?\\s+interface\\b" recv) 0)]
     (find-at text (format "(?m)^\\s+%s\\s*\\(" q) at)))
 
+(defn- disambiguated
+  "Split go-metrics' `init (file.go:12)` suffix from a member name."
+  [member]
+  (if-let [[_ name file line] (re-matches #"(.+)\s+\(([^)]*\.go):(\d+)\)$" member)]
+    {:name name :file file :line (Long/parseLong line)}
+    {:name member}))
+
 (defn- member-parts
-  "Quoted method name and quoted receiver pattern from `ns-name` and
-  `member-name`. The receiver from `ns-name` wins; without one, a dotted
-  member is `Type.Method` and its last segment is the name."
+  "Quoted method name, quoted receiver pattern, and optional line from
+  `ns-name` and `member-name`. The receiver from `ns-name` wins and a
+  leading `Type.` is stripped; without one, a dotted member is
+  `Type.Method`. `init (file.go:12)` keeps the line for the right init."
   [ns-name member-name]
-  (let [member (str member-name)
-        recv-from-ns (some-> (receiver ns-name) Pattern/quote)
+  (let [{:keys [name file line]} (disambiguated (str member-name))
+        recv (receiver ns-name)
+        member (if (and recv (str/starts-with? name (str recv ".")))
+                 (subs name (inc (count recv)))
+                 name)
         dotted (str/includes? member ".")]
-    (if recv-from-ns
-      [(Pattern/quote member) recv-from-ns]
-      (if dotted
-        (let [[prefix last-seg] (str/split member #"\." 2)]
-          [(Pattern/quote last-seg) (Pattern/quote prefix)])
-        [(Pattern/quote member) nil]))))
+    [(if recv
+       (Pattern/quote member)
+       (if dotted
+         (Pattern/quote (second (str/split member #"\." 2)))
+         (Pattern/quote member)))
+     (or (some-> recv Pattern/quote)
+         (when dotted (Pattern/quote (first (str/split member #"\." 2)))))
+     line
+     file]))
+
+(defn- find-at-line
+  "Index of `pattern` in `text` on 1-based `line`, or nil."
+  [text pattern line]
+  (loop [from 0]
+    (when-let [at (find-at text pattern from)]
+      (if (= line (source/line-number text at))
+        at
+        (recur (inc at))))))
 
 (defn member-start
   "Index of the declaration of `member-name` in `text`, or nil.
-  A method on the receiver from `ns-name` wins over other declarations."
+  A method on the receiver from `ns-name` wins over other declarations.
+  `init (file.go:12)` selects the init on that line."
   [text ns-name member-name]
   (when (and text (seq (str member-name)))
-    (let [[q recv] (member-parts ns-name member-name)]
+    (let [[q recv line _file] (member-parts ns-name member-name)
+          find-member (if line
+                        #(find-at-line text % line)
+                        #(find-at text % 0))]
       (or (when recv
-            (or (find-at text (format "(?m)^func\\s*\\([^)]*?\\b%s\\b[^)]*\\)\\s*%s\\s*\\(" recv q) 0)
+            (or (find-member (format "(?m)^func\\s*\\([^)]*?\\b%s\\b[^)]*\\)\\s*%s\\s*\\(" recv q))
                 (interface-spec text recv q)))
-          (find-at text (format "(?m)^func\\s+%s\\b" q) 0)
-          (find-at text (format "(?m)^(?:type\\s+|[ \\t]+)%s\\b(?:\\[[^\\]]*\\])?\\s+(?:=\\s*)?[^=\\s]" q) 0)
-          (find-at text (format "(?m)^func\\s*\\([^)]*\\)\\s*%s\\s*\\(" q) 0)
-          (find-at text (format "(?m)^(?:var|const)\\s+%s\\b" q) 0)))))
+          (find-member (format "(?m)^func\\s+%s\\b" q))
+          (find-member (format "(?m)^(?:type\\s+|[ \\t]+)%s\\b(?:\\[[^\\]]*\\])?\\s+(?:=\\s*)?[^=\\s]" q))
+          (find-member (format "(?m)^func\\s*\\([^)]*\\)\\s*%s\\s*\\(" q))
+          (find-member (format "(?m)^(?:var|const)\\s+%s\\b" q))))))
+
+(defn- build-ignored? [source]
+  (boolean (re-find #"(?m)^//\s*(?:go:build|\+build)\s+ignore\b" source)))
 
 (defn- package-files [file]
   (let [f (io/file file)
         siblings (->> (.listFiles (.getParentFile (.getAbsoluteFile f)))
                       (filter #(str/ends-with? (.getName %) ".go"))
-                      (remove #(str/ends-with? (.getName %) "_test.go"))
                       (sort-by #(.getName %)))]
-    (cons f (remove #(= (.getName %) (.getName f)) siblings))))
+    (->> (cons f (remove #(= (.getName %) (.getName f)) siblings))
+         (remove #(or (str/ends-with? (.getName %) "_test.go")
+                      (build-ignored? (slurp %)))))))
 
 (defn- declaring-file [ident path]
-  (some (fn [f]
-          (when (member-start (slurp f) (:ns ident) (:name ident))
-            (str/replace (.getPath f) #"\\" "/")))
-        (package-files path)))
+  (let [{:keys [file]} (disambiguated (str (:name ident)))]
+    (some (fn [f]
+            (when (or (nil? file) (= file (.getName f)))
+              (when (member-start (slurp f) (:ns ident) (:name ident))
+                (str/replace (.getPath f) #"\\" "/"))))
+          (package-files path))))
 
 (def impl
   (reify source/LanguageSource

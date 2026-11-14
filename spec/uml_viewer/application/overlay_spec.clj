@@ -224,6 +224,28 @@
       (should (some #(= "place" (:name %)) (:ops bar)))
       (should-not (:cc (:Foo by-id))))))
 
+(describe "overlay Go metrics"
+  (it "rolls a type's methods into a package with no package functions"
+    (let [doc {:hierarchical true
+               :prefix "x"
+               :classes [{:id :only :name "only" :ns "x/internal/only"
+                          :lang :go :file "internal/only/only.go"}
+                         {:id :only.Only :name "Only" :ns "x/internal/only.Only"
+                          :lang :go :file "internal/only/only.go"}]
+               :edges []}
+          metrics {:crap {"x/internal/only.Only"
+                          [{:name "Run" :complexity 3 :coverage 100.0 :crap 3.0}]}
+                   :mutate {}}
+          painted (overlay/apply-metrics doc metrics)
+          by-id (into {} (map (juxt :id identity) (:classes painted)))
+          pkg (:only by-id)
+          typ (:only.Only by-id)]
+      (should= 3.0 (get-in pkg [:crap :mu]))
+      (should= 3 (:cc pkg))
+      (should (some #(= "Only.Run" (:name %)) (:ops pkg)))
+      (should= 3.0 (get-in typ [:crap :mu]))
+      (should (some #(= "Run" (:name %)) (:ops typ))))))
+
 (describe "overlay C++ metrics"
   (it "joins overloads by source line and keeps another class out"
     (let [doc {:hierarchical true

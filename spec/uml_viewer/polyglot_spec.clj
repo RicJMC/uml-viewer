@@ -109,7 +109,13 @@
         (should= :go (:lang (by-id :cart.Cart)))
         (should= 2.5 (get-in by-id [:cart.Cart :crap :mu]))
         (should= 3 (:killed (by-id :cart.Cart)))
-        (should= 1.0 (get-in by-id [:cart :crap :mu]))))))
+        ;; The package card rolls up its type rows as Type.Method, while the
+        ;; type card joins the bare method name.
+        (should= 1.8 (get-in by-id [:cart :crap :mu]))
+        (should= 2 (get-in by-id [:cart :crap :n]))
+        (should= 1 (get-in by-id [:cart.Cart :crap :n]))
+        (should (contains? (set (map :name (:ops (by-id :cart)))) "Cart.Total"))
+        (should= 3 (:killed (by-id :cart)))))))
 
 (def ^:private bookwriter
   (let [candidates [(io/file "/Users/unclebob/projects/bookwriter")

@@ -1,7 +1,8 @@
 // Command go-metrics writes uml-viewer's .metrics snapshots for the Go
-// packages in a generated IR: crap.edn entries from a coverprofile, and
-// mutate/<namespace>.edn from gremlins reports. Namespaces are the :ns the Go
-// scanner gave each package, so the viewer's overlay joins them as they are.
+// packages in a generated IR: one crap.edn row per function from a
+// coverprofile, and mutate/<namespace>.edn from gremlins reports. A package
+// function uses the package import path; a method uses import/path.Type with
+// its bare name, which is the contract crapper and the overlay expect.
 package main
 
 import (
@@ -11,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -151,11 +153,34 @@ func writeMutation(spec, out string, pkgs []Package, stdout io.Writer, now time.
 		if !mrun.Covers(pkg.Dir) {
 			continue
 		}
-		target := filepath.Join(out, "mutate", pkg.Namespace+".edn")
-		if err := writeAtomic(target, MutateEDN(pkg, mrun.Tallies(pkg.Funcs), now)); err != nil {
-			return err
+		tallies := mrun.Tallies(pkg.Funcs)
+		wrote := func(namespace string, funcs []Func, display func(Func) string) error {
+			// A Go namespace is an import path. Flatten its slashes so the
+			// snapshot stays one file under .metrics/mutate.
+			target := filepath.Join(out, "mutate", strings.ReplaceAll(namespace, "/", ".")+".edn")
+			if err := writeAtomic(target, MutateEDNFor(pkg, namespace, funcs, tallies, now, display)); err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "wrote %s\n", target)
+			return nil
 		}
-		fmt.Fprintf(stdout, "wrote %s\n", target)
+		if funcs := pkg.PackageFuncs(); len(funcs) > 0 {
+			if err := wrote(pkg.Namespace, funcs, func(f Func) string { return f.Name }); err != nil {
+				return err
+			}
+		}
+		byType := pkg.MethodFuncs()
+		types := make([]string, 0, len(byType))
+		for typeName := range byType {
+			types = append(types, typeName)
+		}
+		sort.Strings(types)
+		for _, typeName := range types {
+			namespace := pkg.Namespace + "." + typeName
+			if err := wrote(namespace, byType[typeName], func(f Func) string { return f.MetricsName() }); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

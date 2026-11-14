@@ -19,11 +19,30 @@ import (
 // Func is one function or method with a body, as the viewer names it.
 type Func struct {
 	Name       string
+	Receiver   string // type name for a method; empty for a package function
 	Private    bool
 	File       string // slash path relative to -root
 	ImportFile string // the file's name in a coverprofile: module path + path in module
 	Start, End token.Position
 	Complexity int
+}
+
+// MetricsNamespace is where the overlay joins this function: the package
+// import path for a function, or import/path.Type for a method.
+func (f Func) MetricsNamespace(pkgNamespace string) string {
+	if f.Receiver == "" {
+		return pkgNamespace
+	}
+	return pkgNamespace + "." + f.Receiver
+}
+
+// MetricsName is the key inside that namespace: the function name, or the
+// bare method name. The overlay reconstructs Type.Method for the package card.
+func (f Func) MetricsName() string {
+	if f.Receiver == "" {
+		return f.Name
+	}
+	return strings.TrimPrefix(f.Name, f.Receiver+".")
 }
 
 // Package is one Go package the viewer drew.
@@ -34,11 +53,35 @@ type Package struct {
 	Funcs     []Func
 }
 
+// PackageFuncs are the functions declared at package scope.
+func (p Package) PackageFuncs() []Func {
+	var funcs []Func
+	for _, f := range p.Funcs {
+		if f.Receiver == "" {
+			funcs = append(funcs, f)
+		}
+	}
+	return funcs
+}
+
+// MethodFuncs groups methods by receiver type. The overlay gives each group
+// its own import/path.Type namespace and bare method names.
+func (p Package) MethodFuncs() map[string][]Func {
+	byType := map[string][]Func{}
+	for _, f := range p.Funcs {
+		if f.Receiver != "" {
+			byType[f.Receiver] = append(byType[f.Receiver], f)
+		}
+	}
+	return byType
+}
+
 // PackagesFromIR lists the Go packages in a hierarchical IR written by
-// `clj -M:ir`. Each Go class carries the :ns the overlay joins snapshots on,
-// and a :file in its package's directory, relative to the directory the IR
-// was generated from, which is root. Reading them here keeps one definition
-// of which directories are packages: the scanner's.
+// `clj -M:ir`. The IR draws a package class and a class per type; both carry
+// a :file in the package directory. Grouping by that directory parses each
+// package once, and the shortest :ns is the package's import path. Reading
+// them here keeps one definition of which directories are packages: the
+// scanner's.
 func PackagesFromIR(root, irPath string, warn io.Writer) ([]Package, error) {
 	data, err := os.ReadFile(irPath)
 	if err != nil {
@@ -53,7 +96,7 @@ func PackagesFromIR(root, irPath string, warn io.Writer) ([]Package, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s has no :classes; generate a hierarchical IR with :lang :go", irPath)
 	}
-	var pkgs []Package
+	byDir := map[string][]string{}
 	for _, c := range classes {
 		class, _ := c.(Map)
 		ns, file, ok := goClass(class)
@@ -63,16 +106,39 @@ func PackagesFromIR(root, irPath string, warn io.Writer) ([]Package, error) {
 		if filepath.IsAbs(file) || strings.HasPrefix(file, "../") {
 			return nil, fmt.Errorf("class %s has :file %q outside -root; run clj -M:ir from the project root and pass that directory as -root", ns, file)
 		}
-		pkg, err := readPackage(root, path.Dir(file), ns, warn)
+		dir := path.Dir(file)
+		byDir[dir] = append(byDir[dir], ns)
+	}
+	if len(byDir) == 0 {
+		return nil, fmt.Errorf("%s has no Go classes", irPath)
+	}
+	dirs := make([]string, 0, len(byDir))
+	for dir := range byDir {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	pkgs := make([]Package, 0, len(dirs))
+	for _, dir := range dirs {
+		// The package class carries the import path; a type class appends
+		// ".Type". The shortest namespace is the package, so one directory is
+		// parsed once even though the IR also draws its types.
+		pkg, err := readPackage(root, dir, shortestNamespace(byDir[dir]), warn)
 		if err != nil {
 			return nil, err
 		}
 		pkgs = append(pkgs, pkg)
 	}
-	if len(pkgs) == 0 {
-		return nil, fmt.Errorf("%s has no Go classes", irPath)
-	}
 	return pkgs, nil
+}
+
+func shortestNamespace(nss []string) string {
+	best := nss[0]
+	for _, ns := range nss[1:] {
+		if len(ns) < len(best) || (len(ns) == len(best) && ns < best) {
+			best = ns
+		}
+	}
+	return best
 }
 
 func goClass(c Map) (ns, file string, ok bool) {
@@ -161,9 +227,10 @@ func fileFuncs(fset *token.FileSet, file *ast.File, rel, importFile string) []Fu
 		if !ok || fd.Body == nil {
 			continue
 		}
-		name, private := funcName(fd)
+		name, receiver, private := funcName(fd)
 		funcs = append(funcs, Func{
 			Name:       name,
+			Receiver:   receiver,
 			Private:    private,
 			File:       rel,
 			ImportFile: importFile,
@@ -177,13 +244,13 @@ func fileFuncs(fset *token.FileSet, file *ast.File, rel, importFile string) []Fu
 
 // funcName is `Name` for a function and `Type.Name` for a method. A method is
 // private when either half is unexported.
-func funcName(fd *ast.FuncDecl) (string, bool) {
+func funcName(fd *ast.FuncDecl) (string, string, bool) {
 	private := !ast.IsExported(fd.Name.Name)
 	if fd.Recv == nil || len(fd.Recv.List) == 0 {
-		return fd.Name.Name, private
+		return fd.Name.Name, "", private
 	}
 	recv := receiverType(fd.Recv.List[0].Type)
-	return recv + "." + fd.Name.Name, private || !ast.IsExported(recv)
+	return recv + "." + fd.Name.Name, recv, private || !ast.IsExported(recv)
 }
 
 func receiverType(expr ast.Expr) string {

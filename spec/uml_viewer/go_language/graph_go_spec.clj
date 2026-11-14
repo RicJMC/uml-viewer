@@ -63,6 +63,21 @@
         (should (contains? edges [:cart.Cart :store.Item :dependency]))
         (should-not (some #(= :cart.Cart (first %)) (filter #(= :fmt (second %)) edges))))))
 
+  (it "does not resolve a method or interface-spec name to a type of that name"
+    (let [dir (temp-module)]
+      (spit-file dir "go.mod" "module example.com/names\n")
+      (spit-file dir "names.go"
+                 (str "package names\n\n"
+                      "type Label string\n\n"
+                      "type Cart struct{}\n\n"
+                      "func (Cart) Label() string { return \"\" }\n\n"
+                      "type Named interface {\n\tLabel() string\n}\n"))
+      (let [{:keys [by-id edges]} (scan dir {:prefix "names"})]
+        (should (contains? by-id :names.Cart))
+        (should (contains? by-id :names.Label))
+        (should-not (contains? edges [:names.Cart :names.Label :dependency]))
+        (should-not (contains? edges [:names.Named :names.Label :dependency])))))
+
   (it "records a type that has every method of a project interface as implements"
     (let [dir (temp-module)]
       (spit-file dir "go.mod" "module example.com/zoo\n")

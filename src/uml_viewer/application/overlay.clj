@@ -251,7 +251,9 @@
   ([c crap-by-ns mutate-by-ns]
    (overlay-class c crap-by-ns mutate-by-ns nil))
   ([c crap-by-ns mutate-by-ns owned]
-   (let [nss (if (nil? owned) [(class-namespace c)] owned)
+   (let [nss (if (nil? owned)
+               [(or (:ns c) (class-namespace c))]
+               owned)
          crap-fns (->> (mapcat #(or (get crap-by-ns %) []) nss)
                        (filter #(metric-owner? c %))
                        vec)
@@ -283,19 +285,76 @@
 (defn- snapshot-names [metrics]
   (distinct (concat (keys (:crap metrics)) (keys (:mutate metrics)))))
 
-(defn- paint-class [c metrics owners]
-  (overlay-class c (:crap metrics) (:mutate metrics)
-                 (get owners (class-namespace c) [])))
+(defn- direct-go-type-children
+  "Direct Go type classes under each package class. A type's ns is the
+  package ns plus `.Type`; a subpackage uses `/`, so it is not a child."
+  [classes]
+  (let [go-classes (filter #(= :go (:lang %)) classes)]
+    (into {}
+          (keep (fn [c]
+                  (when-let [parent (class-namespace c)]
+                    (let [prefix (str (name (:id c)) ".")
+                          kids (vec (for [d go-classes
+                                          :when (not= (:id c) (:id d))
+                                          :let [child (class-namespace d)
+                                                child-id (name (:id d))]
+                                          :when (and child
+                                                     (:name d)
+                                                     (= child (str parent "." (:name d)))
+                                                     (str/starts-with? child-id prefix)
+                                                     (not (str/includes?
+                                                            (subs child-id (count prefix))
+                                                            ".")))]
+                                      d))]
+                      (when (seq kids) [(:id c) kids])))))
+          go-classes)))
 
-(defn- paint-packages [packages metrics owners]
+(defn- prefixed-crap [crap child]
+  (for [row (get crap (:ns child))]
+    (assoc row :name (str (:name child) "." (:name row)))))
+
+(defn- prefixed-mutate [mutate child]
+  (when-let [snapshot (get mutate (:ns child))]
+    {:forms (mapv (fn [form]
+                    (let [n (or (:name form)
+                                (:name (form-name (:id form))))]
+                      (cond-> form
+                        n (assoc :name (str (:name child) "." n)))))
+                  (:forms snapshot))}))
+
+(defn- with-child-metrics
+  "A package card also shows its types' methods as `Type.Method`. The
+  snapshot itself keeps one row per function under `import/path.Type`; the
+  package view is assembled here so both cards join."
+  [metrics c children]
+  (let [parent (:ns c)]
+    (if (and (= :go (:lang c)) parent (seq children))
+      (let [crap-rows (vec (mapcat #(prefixed-crap (:crap metrics) %) children))
+            mut-snaps (vec (keep #(prefixed-mutate (:mutate metrics) %) children))]
+        (cond-> metrics
+          (seq crap-rows)
+          (update-in [:crap parent] (fnil into []) crap-rows)
+          (seq mut-snaps)
+          (update-in [:mutate parent]
+                     (fn [snapshot]
+                       {:forms (vec (concat (:forms snapshot)
+                                            (mapcat :forms mut-snaps)))}))))
+      metrics)))
+
+(defn- paint-class [c metrics owners children]
+  (let [metrics (with-child-metrics metrics c (get children (:id c)))]
+    (overlay-class c (:crap metrics) (:mutate metrics)
+                   (get owners (class-namespace c)))))
+
+(defn- paint-packages [packages metrics owners children]
   (mapv (fn [p]
           (update p :classes
                   (fn [cs]
-                    (mapv #(paint-class % metrics owners) cs))))
+                    (mapv #(paint-class % metrics owners children) cs))))
         packages))
 
-(defn- paint-diagram [d metrics owners]
-  (ir/normalize (update d :packages #(paint-packages % metrics owners))))
+(defn- paint-diagram [d metrics owners children]
+  (ir/normalize (update d :packages #(paint-packages % metrics owners children))))
 
 (defn- doc-classes [doc]
   (cond
@@ -307,16 +366,16 @@
   [doc metrics]
   (if (and (empty? (:crap metrics)) (empty? (:mutate metrics)))
     doc
-    (let [owners (owners-by-ns (doc-classes doc)
-                               (:prefix doc)
-                               (snapshot-names metrics))]
+    (let [classes (doc-classes doc)
+          owners (owners-by-ns classes (:prefix doc) (snapshot-names metrics))
+          children (direct-go-type-children classes)]
       (cond
         (:hierarchical doc)
-        (update doc :classes #(mapv (fn [c] (paint-class c metrics owners)) %))
+        (update doc :classes #(mapv (fn [c] (paint-class c metrics owners children)) %))
         (:diagrams doc)
-        (update doc :diagrams #(mapv (fn [d] (paint-diagram d metrics owners)) %))
+        (update doc :diagrams #(mapv (fn [d] (paint-diagram d metrics owners children)) %))
         (:packages doc)
-        (paint-diagram doc metrics owners)
+        (paint-diagram doc metrics owners children)
         :else doc))))
 
 (defn apply-metrics [document metrics]
