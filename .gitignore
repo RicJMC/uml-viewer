@@ -19,3 +19,6 @@ dist/
 .grok/
 
 
+
+# JS analyzer dependencies stay out of the repo; install locally.
+analyzers/typescript/node_modules/
